@@ -12,7 +12,7 @@ import { SessionCustomCSS } from "@/components/ui/session-custom-css";
 import {
     isNeteaseConfigured, loadMusicApiConfig, saveMusicApiConfig,
     searchNetease, getNeteasePlayInfo, getNeteaseLyrics, getNeteaseSongDetail,
-    testNeteaseConnection, getQrKey, getQrImage, checkQrStatus, checkLoginStatus,
+    testNeteaseConnection, getQrKey, getQrImage, getQrKeyDetailed, getQrImageDetailed, formatMusicApiError, checkQrStatus, checkLoginStatus,
     getUserPlaylists, getPlaylistTracks, saveNeteaseCookie, clearNeteaseCookie,
     getDailyRecommendSongs, getHotSearchDetail, getPersonalizedPlaylists,
     getRecommendResource, getToplists, getUserRecordWithCounts,
@@ -1607,19 +1607,26 @@ function MusicSettingsTab({ onBack, onSaved }: { onBack: () => void; onSaved: ()
         setQrImg(null);
         if (pollRef.current) clearInterval(pollRef.current);
 
-        const key = await getQrKey(base);
-        if (!key) { setQrStatus("获取二维码失败"); return; }
-        setQrKey(key);
+        let key: string;
+        try {
+            key = await getQrKeyDetailed(base);
+            setQrKey(key);
 
-        const img = await getQrImage(base, key);
-        if (!img) { setQrStatus("生成二维码失败"); return; }
-        setQrImg(img);
-        setQrStatus("请用网易云音乐 App 扫码");
-        setQrPolling(true);
+            const img = await getQrImageDetailed(base, key);
+            setQrImg(img);
+            setQrStatus("请用网易云音乐 App 扫码");
+            setQrPolling(true);
+        } catch (error) {
+            setQrStatus(formatMusicApiError(error));
+            setQrPolling(false);
+            return;
+        }
 
         pollRef.current = setInterval(async () => {
             const res = await checkQrStatus(base, key);
-            if (res.code === 803) {
+            if (res.code === 0) {
+                setQrStatus("二维码状态暂时无法确认，请检查网络连接");
+            } else if (res.code === 803) {
                 // Authorized — save auth cookie for subsequent API calls
                 if (res.cookie) saveNeteaseCookie(res.cookie);
                 const nextConfig = { ...config, baseUrl: base, enabled: true };

@@ -307,34 +307,60 @@ export async function getNeteaseSongDetail(songId: number): Promise<{ coverUrl?:
 
 // ── QR Login ──
 
-export async function getQrKey(baseUrl: string): Promise<string | null> {
-    try {
-        const url = resolveNeteaseRequestBase(baseUrl);
-        const resp = await fetch(withNeteaseParams(`${url}/login/qr/key?timestamp=${Date.now()}`));
-        if (!resp.ok) throw new Error(`二维码接口 HTTP ${resp.status}`);
-        const data = await resp.json();
-        const key = data?.data?.unikey;
-        if (typeof key !== "string" || !key.trim()) throw new Error("二维码接口未返回 key");
-        return key;
-    } catch (e) {
-        console.warn("[MusicService] QR key failed:", e instanceof Error ? e.message : "unknown");
-        return null;
+export type MusicApiErrorKind = "network" | "http" | "format";
+export class MusicApiError extends Error {
+    constructor(public readonly kind: MusicApiErrorKind, message: string, public readonly status?: number) {
+        super(message);
+        this.name = "MusicApiError";
     }
 }
 
-export async function getQrImage(baseUrl: string, key: string): Promise<string | null> {
-    try {
-        const url = resolveNeteaseRequestBase(baseUrl);
-        const resp = await fetch(withNeteaseParams(`${url}/login/qr/create?key=${encodeURIComponent(key)}&qrimg=true&timestamp=${Date.now()}`));
-        if (!resp.ok) throw new Error(`二维码图片接口 HTTP ${resp.status}`);
-        const data = await resp.json();
-        const image = data?.data?.qrimg;
-        if (typeof image !== "string" || !image.trim()) throw new Error("二维码图片接口未返回图片");
-        return image;
-    } catch (e) {
-        console.warn("[MusicService] QR image failed:", e instanceof Error ? e.message : "unknown");
-        return null;
+async function readMusicJson(resp: Response, stage: string): Promise<any> {
+    if (!resp.ok) throw new MusicApiError("http", `${stage} HTTP ${resp.status}`, resp.status);
+    try { return await resp.json(); }
+    catch { throw new MusicApiError("format", `${stage} 返回格式无效`); }
+}
+
+export async function getQrKeyDetailed(baseUrl: string): Promise<string> {
+    const url = resolveNeteaseRequestBase(baseUrl);
+    let resp: Response;
+    try { resp = await fetch(withNeteaseParams(`${url}/login/qr/key?timestamp=${Date.now()}`)); }
+    catch { throw new MusicApiError("network", "无法连接网易云音乐 API"); }
+    const data = await readMusicJson(resp, "二维码接口");
+    const key = data?.data?.unikey;
+    if (typeof key !== "string" || !key.trim()) throw new MusicApiError("format", "二维码接口未返回有效密钥");
+    return key;
+}
+
+export async function getQrImageDetailed(baseUrl: string, key: string): Promise<string> {
+    const url = resolveNeteaseRequestBase(baseUrl);
+    let resp: Response;
+    try { resp = await fetch(withNeteaseParams(`${url}/login/qr/create?key=${encodeURIComponent(key)}&qrimg=true&timestamp=${Date.now()}`)); }
+    catch { throw new MusicApiError("network", "无法连接网易云二维码接口"); }
+    const data = await readMusicJson(resp, "二维码图片接口");
+    const image = data?.data?.qrimg;
+    if (typeof image !== "string" || !image.trim()) throw new MusicApiError("format", "二维码图片接口未返回有效图片");
+    return image;
+}
+
+export function formatMusicApiError(error: unknown): string {
+    if (error instanceof MusicApiError) {
+        if (error.kind === "network") return "无法连接网易云 API，请检查网络或 API 地址。";
+        if (error.status === 404) return "当前音乐 API 不支持扫码登录接口，请使用完整的网易云 API。";
+        if (error.kind === "format") return "音乐 API 返回格式不兼容，请检查服务版本。";
+        return "网易云 API 暂时不可用，请稍后重试。";
     }
+    return "网易云登录暂时失败，请稍后重试。";
+}
+
+export async function getQrKey(baseUrl: string): Promise<string | null> {
+    try { return await getQrKeyDetailed(baseUrl); }
+    catch (e) { console.warn("[MusicService] QR key failed:", formatMusicApiError(e)); return null; }
+}
+
+export async function getQrImage(baseUrl: string, key: string): Promise<string | null> {
+    try { return await getQrImageDetailed(baseUrl, key); }
+    catch (e) { console.warn("[MusicService] QR image failed:", formatMusicApiError(e)); return null; }
 }
 
 /** Check QR scan status: 800=expired, 801=waiting, 802=scanned, 803=authorized */

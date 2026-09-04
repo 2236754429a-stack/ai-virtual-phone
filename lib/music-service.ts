@@ -311,25 +311,38 @@ export async function getQrKey(baseUrl: string): Promise<string | null> {
     try {
         const url = resolveNeteaseRequestBase(baseUrl);
         const resp = await fetch(withNeteaseParams(`${url}/login/qr/key?timestamp=${Date.now()}`));
+        if (!resp.ok) throw new Error(`二维码接口 HTTP ${resp.status}`);
         const data = await resp.json();
-        return data?.data?.unikey || null;
-    } catch { return null; }
+        const key = data?.data?.unikey;
+        if (typeof key !== "string" || !key.trim()) throw new Error("二维码接口未返回 key");
+        return key;
+    } catch (e) {
+        console.warn("[MusicService] QR key failed:", e instanceof Error ? e.message : "unknown");
+        return null;
+    }
 }
 
 export async function getQrImage(baseUrl: string, key: string): Promise<string | null> {
     try {
         const url = resolveNeteaseRequestBase(baseUrl);
-        const resp = await fetch(withNeteaseParams(`${url}/login/qr/create?key=${key}&qrimg=true&timestamp=${Date.now()}`));
+        const resp = await fetch(withNeteaseParams(`${url}/login/qr/create?key=${encodeURIComponent(key)}&qrimg=true&timestamp=${Date.now()}`));
+        if (!resp.ok) throw new Error(`二维码图片接口 HTTP ${resp.status}`);
         const data = await resp.json();
-        return data?.data?.qrimg || null;
-    } catch { return null; }
+        const image = data?.data?.qrimg;
+        if (typeof image !== "string" || !image.trim()) throw new Error("二维码图片接口未返回图片");
+        return image;
+    } catch (e) {
+        console.warn("[MusicService] QR image failed:", e instanceof Error ? e.message : "unknown");
+        return null;
+    }
 }
 
 /** Check QR scan status: 800=expired, 801=waiting, 802=scanned, 803=authorized */
 export async function checkQrStatus(baseUrl: string, key: string): Promise<{ code: number; message: string; nickname?: string; cookie?: string }> {
     try {
         const url = resolveNeteaseRequestBase(baseUrl);
-        const resp = await fetch(withNeteaseParams(`${url}/login/qr/check?key=${key}&timestamp=${Date.now()}`));
+        const resp = await fetch(withNeteaseParams(`${url}/login/qr/check?key=${encodeURIComponent(key)}&timestamp=${Date.now()}`));
+        if (!resp.ok) return { code: 0, message: `二维码状态接口 HTTP ${resp.status}` };
         const data = await resp.json();
         return { code: data?.code || 0, message: data?.message || "", nickname: data?.profile?.nickname, cookie: data?.cookie };
     } catch (e) {

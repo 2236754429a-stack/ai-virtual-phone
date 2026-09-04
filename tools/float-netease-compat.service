@@ -1,0 +1,24 @@
+[Unit]
+Description=Float NetEase compatibility API
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/float-netease-compat
+Environment=MUSIC_COMPAT_HOST=100.93.157.70
+Environment=MUSIC_COMPAT_PORT=3012
+Environment=MUSIC_UPSTREAM=http://100.93.157.70:3000
+ExecStart=/usr/bin/node /opt/float-netease-compat/server.mjs
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/float-netease-compat
+MemoryMax=256M
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target

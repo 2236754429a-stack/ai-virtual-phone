@@ -40,6 +40,7 @@ export default function MusicApp({ onClose }: Props) {
     const [loading, setLoading] = useState(true);
     const [tab, setTab] = useState<TabId>("local");
     const [hasNetease, setHasNetease] = useState(false);
+    const [neteaseLoggedIn, setNeteaseLoggedIn] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
     const [showCssEditor, setShowCssEditor] = useState(false);
     const [customCss, setCustomCss] = useState("");
@@ -92,6 +93,16 @@ export default function MusicApp({ onClose }: Props) {
         } else {
             setPlaylistsLoading(false);
         }
+    }, []);
+
+    useEffect(() => {
+        const base = loadMusicApiConfig().baseUrl.trim();
+        if (!base) { setNeteaseLoggedIn(false); return; }
+        let cancelled = false;
+        void checkLoginStatus(base).then(status => {
+            if (!cancelled) setNeteaseLoggedIn(Boolean(status.loggedIn));
+        });
+        return () => { cancelled = true; };
     }, []);
 
     useEffect(() => {
@@ -259,6 +270,8 @@ export default function MusicApp({ onClose }: Props) {
         const neteaseOk = isNeteaseConfigured();
         setHasNetease(neteaseOk);
         if (neteaseOk) {
+            void checkLoginStatus(loadMusicApiConfig().baseUrl).then(status => setNeteaseLoggedIn(Boolean(status.loggedIn)));
+
             setTab("recommend");
             // API address may have changed — clear old cache and reload playlists
             kvRemove("music-playlists-cache");

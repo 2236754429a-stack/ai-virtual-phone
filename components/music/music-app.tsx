@@ -13,7 +13,8 @@ import {
     isNeteaseConfigured, loadMusicApiConfig, saveMusicApiConfig,
     searchNetease, getNeteasePlayInfo, getNeteaseLyrics, getNeteaseSongDetail,
     testNeteaseConnection, getQrKey, getQrImage, getQrKeyDetailed, getQrImageDetailed, formatMusicApiError, checkQrStatus, checkLoginStatus,
-    getUserPlaylists, getPlaylistTracks, saveNeteaseCookie, clearNeteaseCookie,
+    getUserPlaylists, getPlaylistTracks,
+    logoutNetease,
     getDailyRecommendSongs, getHotSearchDetail, getPersonalizedPlaylists,
     getRecommendResource, getToplists, getUserRecordWithCounts,
     getPlaylistDetail, getUserDetail, subscribePlaylist,
@@ -1627,8 +1628,7 @@ function MusicSettingsTab({ onBack, onSaved }: { onBack: () => void; onSaved: ()
             if (res.code === 0) {
                 setQrStatus("二维码状态暂时无法确认，请检查网络连接");
             } else if (res.code === 803) {
-                // Authorized — save auth cookie for subsequent API calls
-                if (res.cookie) saveNeteaseCookie(res.cookie);
+                // The server owns the session; no credential is copied into browser storage.
                 const nextConfig = { ...config, baseUrl: base, enabled: true };
                 saveMusicApiConfig(nextConfig);
                 setConfig(nextConfig);
@@ -1657,7 +1657,7 @@ function MusicSettingsTab({ onBack, onSaved }: { onBack: () => void; onSaved: ()
         setQrKey(null);
         setQrStatus("");
         setLoginNickname(null);
-        clearNeteaseCookie();
+        void logoutNetease(config.baseUrl);
         clearMusicCloudSyncData();
         onSaved();
     };

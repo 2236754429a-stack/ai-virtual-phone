@@ -1,7 +1,7 @@
 // lib/music-service.ts — Unified music search service (local + Netease Cloud Music API)
 
 import { loadAllTracks, type MusicTrack } from "./music-storage";
-import { kvGet, kvSet, kvRemove, registerKvMigration } from "./kv-db";
+import { kvGet, kvSet, registerKvMigration } from "./kv-db";
 import {
     DEFAULT_NETEASE_API_BASE,
     isDefaultNeteaseApiBase,
@@ -17,7 +17,6 @@ export type MusicApiConfig = {
 };
 
 const MUSIC_API_KEY = "ai_phone_music_api_v1";
-const NETEASE_COOKIE_KEY = "ai_phone_netease_cookie_v1";
 const MUSIC_API_CONFIG_VERSION = 2;
 const NETEASE_REAL_IP = process.env.NEXT_PUBLIC_NETEASE_REAL_IP || "116.25.146.177";
 
@@ -57,35 +56,16 @@ export function isNeteaseConfigured(): boolean {
     return !!cfg.baseUrl.trim();
 }
 
-// ── Cookie persistence for QR login auth ──
-
-export function saveNeteaseCookie(cookie: string): void {
-    try { kvSet(NETEASE_COOKIE_KEY, cookie); } catch { /* ignore */ }
-}
-
-export function loadNeteaseCookie(): string {
-    if (typeof window === "undefined") return "";
-    try { return kvGet(NETEASE_COOKIE_KEY) || ""; } catch { return ""; }
-}
-
-export function clearNeteaseCookie(): void {
-    try { kvRemove(NETEASE_COOKIE_KEY); } catch { /* ignore */ }
-}
-
-/** Append saved cookie and mainland realIP to a Netease API URL as query parameters. */
+// ── API request parameters ──
 function withNeteaseParams(url: string): string {
-    const cookie = loadNeteaseCookie();
     try {
         const parsed = new URL(url);
         if (!parsed.searchParams.has("realIP")) parsed.searchParams.set("realIP", NETEASE_REAL_IP);
-        if (cookie && !parsed.searchParams.has("cookie")) parsed.searchParams.set("cookie", cookie);
         return parsed.toString();
     } catch {
-        const params: string[] = [];
-        if (!/[?&]realIP=/.test(url)) params.push(`realIP=${encodeURIComponent(NETEASE_REAL_IP)}`);
-        if (cookie && !/[?&]cookie=/.test(url)) params.push(`cookie=${encodeURIComponent(cookie)}`);
-        if (params.length === 0) return url;
-        return `${url}${url.includes("?") ? "&" : "?"}${params.join("&")}`;
+        return /[?&]realIP=/.test(url)
+            ? url
+            : `${url}${url.includes("?") ? "&" : "?"}realIP=${encodeURIComponent(NETEASE_REAL_IP)}`;
     }
 }
 
@@ -245,9 +225,9 @@ export async function getNeteasePlayInfo(songId: number): Promise<NeteasePlayInf
             return { url: url.replace(/^http:\/\//, "https://"), trial: !!d?.freeTrialInfo, reason: "" };
         }
         const fee = d?.fee;
-        const loggedIn = !!loadNeteaseCookie();
+        const loggedIn = (await checkLoginStatus(base)).loggedIn;
         if (fee === 1) {
-            return { url: null, trial: false, reason: loggedIn ? "VIP 歌曲，当前账号没有黑胶会员" : "VIP 歌曲，请先在设置中登录网易云账号" };
+        return { url: null, trial: false, reason: loggedIn ? "VIP 歌曲，当前账号没有黑胶会员" : "VIP 歌曲，请先在设置中登录网易云账号" };
         }
         if (fee === 4) {
             return { url: null, trial: false, reason: "付费专辑歌曲，需购买后才能播放" };
@@ -364,13 +344,13 @@ export async function getQrImage(baseUrl: string, key: string): Promise<string |
 }
 
 /** Check QR scan status: 800=expired, 801=waiting, 802=scanned, 803=authorized */
-export async function checkQrStatus(baseUrl: string, key: string): Promise<{ code: number; message: string; nickname?: string; cookie?: string }> {
+export async function checkQrStatus(baseUrl: string, key: string): Promise<{ code: number; message: string; nickname?: string }> {
     try {
         const url = resolveNeteaseRequestBase(baseUrl);
         const resp = await fetch(withNeteaseParams(`${url}/login/qr/check?key=${encodeURIComponent(key)}&timestamp=${Date.now()}`));
         if (!resp.ok) return { code: 0, message: `二维码状态接口 HTTP ${resp.status}` };
         const data = await resp.json();
-        return { code: data?.code || 0, message: data?.message || "", nickname: data?.profile?.nickname, cookie: data?.cookie };
+        return { code: data?.code || 0, message: data?.message || "", nickname: data?.profile?.nickname };
     } catch (e) {
         return { code: 0, message: e instanceof Error ? e.message : "检查失败" };
     }
@@ -388,7 +368,15 @@ export async function checkLoginStatus(baseUrl: string): Promise<{ loggedIn: boo
     } catch { return { loggedIn: false }; }
 }
 
-// ── User Playlists ──
+export async function logoutNetease(baseUrl: string): Promise<boolean> {
+    const url = resolveNeteaseRequestBase(baseUrl);
+    try {
+        const resp = await fetch(`${url}/logout`, { method: "POST", headers: { "Content-Type": "application/json" } });
+        return resp.ok;
+    } catch { return false; }
+}
+
+
 
 export type NeteasePlaylist = {
     id: number;
@@ -618,7 +606,7 @@ export async function getFloorComments(songId: number, parentCommentId: number, 
 export async function postSongComment(songId: number, content: string, resType: NeteaseCommentResType = 0): Promise<{ ok: boolean; message: string }> {
     const base = neteaseBase();
     if (!base) return { ok: false, message: "API 未配置" };
-    if (!loadNeteaseCookie()) return { ok: false, message: "发送评论需要先登录网易云账号" };
+    if (!(await checkLoginStatus(base)).loggedIn) return { ok: false, message: "发送评论需要先登录网易云账号" };
     try {
         const resp = await fetch(withNeteaseParams(`${base}/comment?t=1&type=${resType}&id=${songId}&content=${encodeURIComponent(content)}&timestamp=${Date.now()}`));
         const data = await resp.json();
@@ -633,7 +621,7 @@ export async function postSongComment(songId: number, content: string, resType: 
 export async function subscribePlaylist(playlistId: number, subscribe: boolean): Promise<{ ok: boolean; message: string }> {
     const base = neteaseBase();
     if (!base) return { ok: false, message: "API 未配置" };
-    if (!loadNeteaseCookie()) return { ok: false, message: "收藏歌单需要先登录网易云账号" };
+    if (!(await checkLoginStatus(base)).loggedIn) return { ok: false, message: "收藏歌单需要先登录网易云账号" };
     try {
         const resp = await fetch(withNeteaseParams(`${base}/playlist/subscribe?t=${subscribe ? 1 : 2}&id=${playlistId}&timestamp=${Date.now()}`));
         const data = await resp.json();
@@ -748,7 +736,6 @@ export async function getUserRecordWithCounts(type: 0 | 1 = 1): Promise<NeteaseP
 
 const TRACK_PLAYLIST_MAP_KEY = "ai_phone_track_playlist_map_v1";
 registerKvMigration(MUSIC_API_KEY);
-registerKvMigration(NETEASE_COOKIE_KEY);
 registerKvMigration(TRACK_PLAYLIST_MAP_KEY);
 
 /** Load {neteaseTrackId → playlistId} mapping */

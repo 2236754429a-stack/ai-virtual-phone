@@ -457,6 +457,28 @@ function linkifyBareUrls(text: string): string {
     });
 }
 
+// 小红书链接（www.xiaohongshu.com / xhslink.com 短链）：渲染成分享卡片而不是裸链接。
+// 卡片是展示层逻辑，发出方与接收方走同一个 MARKDOWN_COMPONENTS，天然双向生效。
+const XHS_URL_RE = /https?:\/\/(?:[\w-]+\.)*(?:xiaohongshu\.com|xhslink\.com)(?:[/?#]|$)/i;
+
+function XiaohongshuLinkCard({ href }: { href: string }) {
+    let host = href;
+    try {
+        host = new URL(href).host;
+    } catch { /* 拿不到 host 就原样展示截断的链接 */ }
+    const isShort = /xhslink\.com/i.test(href);
+    return (
+        <a className="chat-xhs-card" href={href} target="_blank" rel="noreferrer noopener">
+            <span className="chat-xhs-card-icon">红</span>
+            <span className="chat-xhs-card-main">
+                <span className="chat-xhs-card-title">{isShort ? "小红书 · 分享链接" : "小红书 · 笔记"}</span>
+                <span className="chat-xhs-card-host">{host}</span>
+            </span>
+            <span className="chat-xhs-card-arrow">›</span>
+        </a>
+    );
+}
+
 const MARKDOWN_COMPONENTS = {
     p: ({ node, className, ...props }: any) => (
         <div
@@ -471,7 +493,12 @@ const MARKDOWN_COMPONENTS = {
             <table {...props} />
         </div>
     ),
-    a: ({ node, ...props }: any) => <a className="chat-markdown-link" target="_blank" rel="noreferrer" {...props} />,
+    a: ({ node, href, children, ...props }: any) => {
+        if (typeof href === "string" && XHS_URL_RE.test(href)) {
+            return <XiaohongshuLinkCard href={href} />;
+        }
+        return <a className="chat-markdown-link" target="_blank" rel="noreferrer" href={href} {...props}>{children}</a>;
+    },
     user: ({ node, ...props }: any) => <span className="rm-user" {...props} />,
     prologue: ({ node, ...props }: any) => <div className="rm-prologue" {...props} />,
     profile: ({ node, ...props }: any) => <div className="rm-profile" {...props} />,

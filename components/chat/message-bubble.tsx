@@ -460,18 +460,62 @@ function linkifyBareUrls(text: string): string {
 // 小红书链接（www.xiaohongshu.com / xhslink.com 短链）：渲染成分享卡片而不是裸链接。
 // 卡片是展示层逻辑，发出方与接收方走同一个 MARKDOWN_COMPONENTS，天然双向生效。
 const XHS_URL_RE = /https?:\/\/(?:[\w-]+\.)*(?:xiaohongshu\.com|xhslink\.com)(?:[/?#]|$)/i;
+// 元数据（og:title/og:image）由 notes.emberroom.cn/xhs-meta 服务端抓取：
+// 浏览器直连小红书有 CORS 墙，服务器抓不到（风控/需登录）时回退静态卡片。
+const XHS_META_ENDPOINT = "https://notes.emberroom.cn/xhs-meta/fetch";
+
+type XhsMeta = { ok?: boolean; title?: string; image?: string; description?: string };
+
+const xhsMetaCache = new Map<string, Promise<XhsMeta | null>>();
+
+function fetchXhsMeta(href: string): Promise<XhsMeta | null> {
+    let pending = xhsMetaCache.get(href);
+    if (!pending) {
+        pending = (async () => {
+            try {
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), 8000);
+                const res = await fetch(`${XHS_META_ENDPOINT}?url=${encodeURIComponent(href)}`, { signal: controller.signal });
+                clearTimeout(timer);
+                if (!res.ok) return null;
+                const data = await res.json() as XhsMeta;
+                return data?.ok && data.title ? { ...data } : null;
+            } catch {
+                return null;
+            }
+        })();
+        xhsMetaCache.set(href, pending);
+        // 抓取失败只短期记忆，10 分钟后允许重试（成功结果整个会话复用）
+        pending.then(value => {
+            if (!value) setTimeout(() => xhsMetaCache.delete(href), 10 * 60 * 1000).unref?.();
+        });
+    }
+    return pending;
+}
 
 function XiaohongshuLinkCard({ href }: { href: string }) {
+    const [meta, setMeta] = useState<XhsMeta | null>(null);
+    const [imgBroken, setImgBroken] = useState(false);
+    useEffect(() => {
+        let alive = true;
+        fetchXhsMeta(href).then(value => {
+            if (alive && value) setMeta(value);
+        });
+        return () => { alive = false; };
+    }, [href]);
     let host = href;
     try {
         host = new URL(href).host;
     } catch { /* 拿不到 host 就原样展示截断的链接 */ }
     const isShort = /xhslink\.com/i.test(href);
+    const showCover = Boolean(meta?.image) && !imgBroken;
     return (
         <a className="chat-xhs-card" href={href} target="_blank" rel="noreferrer noopener">
-            <span className="chat-xhs-card-icon">红</span>
+            {showCover
+                ? <img className="chat-xhs-card-cover" src={meta!.image} referrerPolicy="no-referrer" onError={() => setImgBroken(true)} alt="" />
+                : <span className="chat-xhs-card-icon">红</span>}
             <span className="chat-xhs-card-main">
-                <span className="chat-xhs-card-title">{isShort ? "小红书 · 分享链接" : "小红书 · 笔记"}</span>
+                <span className="chat-xhs-card-title">{meta?.title || (isShort ? "小红书 · 分享链接" : "小红书 · 笔记")}</span>
                 <span className="chat-xhs-card-host">{host}</span>
             </span>
             <span className="chat-xhs-card-arrow">›</span>

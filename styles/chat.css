@@ -3133,10 +3133,21 @@
   font-size: calc(13.5px * var(--app-text-scale, 1));
   font-weight: 600;
   color: #d3303f;
-  line-height: 1.2;
-  white-space: nowrap;
+  line-height: 1.3;
+  max-width: 210px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
+  word-break: break-word;
+}
+.chat-xhs-card-cover {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: rgba(255, 36, 66, 0.08);
 }
 .chat-xhs-card-host {
   font-size: calc(10.5px * var(--app-text-scale, 1));

@@ -278,7 +278,13 @@ function normalizeManifest(raw: unknown): ThemePackageManifest {
 
   const candidate = raw as Record<string, unknown>;
   if (candidate.schema !== PACKAGE_SCHEMA || candidate.version !== PACKAGE_VERSION) {
-    throw new Error("不支持的主题包版本");
+    // 市场里混着应用包（schema 缺失、版本是 "1.0.0" 这类字符串），选错目的地时
+    // 走到这里；把包里实际的字段报出来，用户才知道该换哪种导入方式。
+    const found = `schema=${JSON.stringify(candidate.schema ?? null)}, version=${JSON.stringify(candidate.version ?? null)}`;
+    if (!candidate.schema && typeof candidate.version === "string") {
+      throw new Error(`这不是主题包（${found}），更像应用/插件安装包——请在集市里改用「应用」或「插件」导入`);
+    }
+    throw new Error(`不支持的主题包版本（包内 ${found}；本机要求 schema="${PACKAGE_SCHEMA}"、version=${PACKAGE_VERSION}）。旧版导出的主题请在原设备上用新版重新导出后再导入`);
   }
 
   const desktop = candidate.desktop && typeof candidate.desktop === "object"
@@ -381,8 +387,15 @@ function packageFileName(themeProfile: ThemeProfile): string {
 }
 
 async function loadZip(file: File) {
+  // 先看魔数：镜像被 DNS 污染时 fetch 可能拿到 200 的 HTML 错误页，
+  // 直接丢给 JSZip 会报「Corrupted zip」这类没人看得懂的错。
+  const buffer = await file.arrayBuffer();
+  const head = new Uint8Array(buffer.slice(0, 2));
+  if (head.length < 2 || head[0] !== 0x50 || head[1] !== 0x4b) {
+    throw new Error("下载到的内容不是有效的主题包（多半是网络/镜像返回了错误页面），请重试或稍后再试");
+  }
   const JSZip = (await import("jszip")).default;
-  const zip = await JSZip.loadAsync(await file.arrayBuffer());
+  const zip = await JSZip.loadAsync(buffer);
   const manifestFile = zip.file("manifest.json");
   if (!manifestFile) {
     throw new Error("主题包缺少 manifest.json");

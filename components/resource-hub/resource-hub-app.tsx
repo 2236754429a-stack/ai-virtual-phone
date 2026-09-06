@@ -18,7 +18,7 @@ import {
     fetchResourceHubText,
     loadResourceHubSource,
     purgeShareIndexCache,
-    resolveResourceHubAssetUrl,
+    resourceHubAssetUrlCandidates,
     saveResourceHubSource,
 } from "@/lib/resource-hub-client";
 import {
@@ -51,6 +51,7 @@ import {
 } from "@/lib/resource-hub-identity";
 import { mergeMyUploads, submitOwnershipClaim } from "@/lib/resource-hub-upload";
 import { DefaultPixelAvatar } from "@/components/resource-hub/pixel-avatar";
+import { HubImg } from "@/components/resource-hub/hub-image";
 import { DestPixelIcon, FileTypePixelIcon, fileExtension } from "@/components/resource-hub/pixel-icons";
 import { loadPresets } from "@/lib/settings-storage";
 import { displayOrderPrompts } from "@/lib/preset-entry-import";
@@ -153,6 +154,8 @@ export function ResourceHubApp({ onClose, onNotice }: { onClose: () => void; onN
     }, [buildWall, buildWallState, source]);
     // 图片全屏预览（点开可保存）
     const [previewImage, setPreviewImage] = useState<string | null>(null);
+    // 详情图换源后实际加载成功的 URL（点开放大时用同一张，别再随机挂一次）
+    const resolvedPreviewRef = useRef<Record<string, string>>({});
     // 送花：各资源花数（我的货摊展示用）+ 非阻塞小提示
     const [flowerCounts, setFlowerCounts] = useState<FlowerCounts | null>(null);
     const [toast, setToast] = useState<string | null>(null);
@@ -715,15 +718,15 @@ export function ResourceHubApp({ onClose, onNotice }: { onClose: () => void; onN
 
     /** 作者头像：优先用随资源发布的 .avatar.png；自己的帖子退回本机头像；都没有就用默认像素头像 */
     const renderAuthorAvatar = (entry: ShareIndexEntry | null, size: number) => {
-        const published = entry?.avatar ? resolveResourceHubAssetUrl(source, entry.avatar) : "";
+        const publishedCandidates = entry?.avatar ? resourceHubAssetUrlCandidates(source, entry.avatar) : [];
         const local = !entry || myRecordFor(entry.path) ? profile.avatarDataUrl : "";
-        const url = published || local;
         return (
             <span className="rh-avatar" style={{ width: size, height: size }}>
-                {url
-                    // eslint-disable-next-line @next/next/no-img-element
-                    ? <img src={url} alt="" width={size} height={size} />
-                    : <DefaultPixelAvatar size={size} />}
+                {publishedCandidates.length > 0
+                    ? <HubImg candidates={publishedCandidates} alt="" width={size} height={size} />
+                    : local
+                        ? <img src={local} alt="" width={size} height={size} />
+                        : <DefaultPixelAvatar size={size} />}
             </span>
         );
     };
@@ -748,8 +751,7 @@ export function ResourceHubApp({ onClose, onNotice }: { onClose: () => void; onN
     const renderEntryRow = (entry: ShareIndexEntry, showFolder = false, flowers?: number | "loading") => (
         <button key={entry.path} className="rh-entry" onClick={() => { setActiveEntry(entry); setSelectedFile(entry.files[0] ?? null); }}>
             {entry.images.length > 0 ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img className="rh-entry-thumb" src={resolveResourceHubAssetUrl(source, entry.images[0])} alt="" loading="lazy" />
+                <HubImg className="rh-entry-thumb" candidates={resourceHubAssetUrlCandidates(source, entry.images[0])} alt="" loading="lazy" />
             ) : (
                 <span className="rh-entry-thumb rh-entry-thumb-blank">📄</span>
             )}
@@ -1046,7 +1048,7 @@ export function ResourceHubApp({ onClose, onNotice }: { onClose: () => void; onN
                                     ? <div className="rh-detail2-desc"><RichText text={activeEntry.description} mode="full" /></div>
                                     : <div className="rh-detail2-desc rh-detail2-desc-empty">（该资源没有说明文字）</div>}
                                 {activeEntry.images.map(img => {
-                                    const url = resolveResourceHubAssetUrl(source, img);
+                                    const candidates = resourceHubAssetUrlCandidates(source, img);
                                     return (
                                         // 点击层放在外层 div 而非 img 本身：iOS WebKit 对非交互元素
                                         // 的点击合成不可靠，聊天页同款结构在 iOS 上验证可用
@@ -1055,10 +1057,14 @@ export function ResourceHubApp({ onClose, onNotice }: { onClose: () => void; onN
                                             className="rh-detail2-imgwrap"
                                             role="button"
                                             style={{ cursor: "pointer" }}
-                                            onClick={e => { e.stopPropagation(); setPreviewImage(url); }}
+                                            onClick={e => { e.stopPropagation(); setPreviewImage(resolvedPreviewRef.current[img] ?? candidates[0]); }}
                                         >
-                                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                                            <img src={url} alt="" loading="lazy" />
+                                            <HubImg
+                                                candidates={candidates}
+                                                alt=""
+                                                loading="lazy"
+                                                onResolved={url => { resolvedPreviewRef.current[img] = url; }}
+                                            />
                                         </div>
                                     );
                                 })}

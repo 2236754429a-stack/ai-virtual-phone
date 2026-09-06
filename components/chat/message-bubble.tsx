@@ -474,7 +474,9 @@ function fetchXhsMeta(href: string): Promise<XhsMeta | null> {
         pending = (async () => {
             try {
                 const controller = new AbortController();
-                const timer = setTimeout(() => controller.abort(), 8000);
+                // 服务端有「登录态浏览器兜底」链路（用户主页等登录墙页面），
+                // 冷启动+渲染可能要 10~20s，给足 30s；卡片在元数据到达前先显示静态样式
+                const timer = setTimeout(() => controller.abort(), 30000);
                 const res = await fetch(`${XHS_META_ENDPOINT}?url=${encodeURIComponent(href)}`, { signal: controller.signal });
                 clearTimeout(timer);
                 if (!res.ok) return null;

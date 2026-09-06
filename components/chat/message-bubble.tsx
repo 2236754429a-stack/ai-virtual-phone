@@ -493,6 +493,16 @@ function fetchXhsMeta(href: string): Promise<XhsMeta | null> {
     return pending;
 }
 
+function xhsLinkLabel(href: string): string {
+    try {
+        const path = new URL(href).pathname;
+        if (/\/(explore|discovery\/item)\//.test(path)) return "小红书 · 笔记";
+        if (/^\/user\/profile\//.test(path)) return "小红书 · 用户主页";
+        if (/^\/search_result\//.test(path)) return "小红书 · 搜索页";
+    } catch { /* URL 解析失败按短链处理 */ }
+    return "小红书 · 分享链接";
+}
+
 function XiaohongshuLinkCard({ href }: { href: string }) {
     const [meta, setMeta] = useState<XhsMeta | null>(null);
     const [imgBroken, setImgBroken] = useState(false);
@@ -507,7 +517,6 @@ function XiaohongshuLinkCard({ href }: { href: string }) {
     try {
         host = new URL(href).host;
     } catch { /* 拿不到 host 就原样展示截断的链接 */ }
-    const isShort = /xhslink\.com/i.test(href);
     const showCover = Boolean(meta?.image) && !imgBroken;
     return (
         <a className="chat-xhs-card" href={href} target="_blank" rel="noreferrer noopener">
@@ -515,7 +524,7 @@ function XiaohongshuLinkCard({ href }: { href: string }) {
                 ? <img className="chat-xhs-card-cover" src={meta!.image} referrerPolicy="no-referrer" onError={() => setImgBroken(true)} alt="" />
                 : <span className="chat-xhs-card-icon">红</span>}
             <span className="chat-xhs-card-main">
-                <span className="chat-xhs-card-title">{meta?.title || (isShort ? "小红书 · 分享链接" : "小红书 · 笔记")}</span>
+                <span className="chat-xhs-card-title">{meta?.title || xhsLinkLabel(href)}</span>
                 <span className="chat-xhs-card-host">{host}</span>
             </span>
             <span className="chat-xhs-card-arrow">›</span>

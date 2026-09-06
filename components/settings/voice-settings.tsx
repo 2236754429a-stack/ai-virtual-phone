@@ -845,7 +845,8 @@ export function VoiceSettings() {
                                             <label className="menu-desc ml-1">默认音色 (Default Voice) 或 自定义 Voice ID</label>
                                             <div className="flex flex-col gap-2">
                                                 <div className="flex gap-2">
-                                                    {manualVoiceIds[config.id] ? (
+                                                    {/* Mossland 音色 ID 只能从 Moss 平台复制,默认直接给输入框,其余服务商维持下拉 */}
+                                                    {manualVoiceIds[config.id] ?? config.provider === "Mossland" ? (
                                                         <>
                                                             <Input
                                                                 type="text"

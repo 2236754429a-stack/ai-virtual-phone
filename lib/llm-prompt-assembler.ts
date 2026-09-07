@@ -412,7 +412,7 @@ function getMarkerContent(
 ): string | null {
     switch (identifier) {
         case "charDescription":
-            return `You are ${character.name}.\n${character.persona}${character.responseLanguage === "en" ? "\n\nResponse language rule: Use English only for all natural-language output. Do not add Chinese translations or bilingual text. Preserve any required tool, JSON, XML, or protocol syntax exactly." : ""}`;
+            return `You are ${character.name}.\n${character.persona}`;
         case "charPersonality":
             return character.personality?.trim() || null;
         case "personaDescription":

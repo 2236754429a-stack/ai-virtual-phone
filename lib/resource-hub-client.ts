@@ -239,25 +239,24 @@ async function buildIndexFromTree(source: ResourceHubSource): Promise<ShareIndex
     // 只认 资源/ 下的内容：资源/<分类>/<资源子文件夹或孤立文件>
     const paths = (data.files ?? [])
         .map(f => (f.name || "").replace(/^\/+/, ""))
-        .filter(p => p && !p.startsWith(".") && !p.split("/").some(segment => HIDDEN_FOLDERS.has(segment)));
+        .filter(p => p.startsWith(`${RESOURCE_ROOT}/`));
 
     const folderMap = new Map<string, Map<string, ShareIndexEntry>>();
     for (const p of paths) {
         const segments = p.split("/");
-        const rootOffset = segments[0] === RESOURCE_ROOT ? 1 : 0;
-        if (segments.length < rootOffset + 2) continue;
-        const folder = segments[rootOffset];
+        if (segments.length < 3) continue; // 资源/ 下的孤立文件不算资源
+        const folder = segments[1];
         if (!folder || folder.startsWith(".") || HIDDEN_FOLDERS.has(folder)) continue;
         const base = segments[segments.length - 1];
         if (base.startsWith(".")) continue; // .owner 等隐藏文件
         if (!folderMap.has(folder)) folderMap.set(folder, new Map());
         const entryMap = folderMap.get(folder)!;
-        if (segments.length === rootOffset + 2) {
+        if (segments.length === 3) {
             // 孤立文件式资源
             const key = `file:${p}`;
             entryMap.set(key, {
                 folder,
-                name: base.replace(/\.[^.]+$/, ""),
+                name: segments[2].replace(/\.[^.]+$/, ""),
                 type: "file",
                 path: p,
                 files: [p],
@@ -266,14 +265,13 @@ async function buildIndexFromTree(source: ResourceHubSource): Promise<ShareIndex
                 updatedAt: null,
             });
         } else {
-            // 子文件夹式资源（取分类下第一层子文件夹为资源名，深层文件归并进来）
-            const entryPath = segments.slice(0, rootOffset + 2).join("/");
+            // 子文件夹式资源（取第三层为资源名，深层文件归并进来）
+            const entryPath = `${segments[0]}/${segments[1]}/${segments[2]}`;
             const key = `dir:${entryPath}`;
-            const entryName = segments[rootOffset + 1];
             if (!entryMap.has(key)) {
                 entryMap.set(key, {
                     folder,
-                    name: entryName,
+                    name: segments[2],
                     type: "dir",
                     path: entryPath,
                     files: [],
@@ -355,7 +353,7 @@ export function checkImportFileForDestination(destination: ImportDestination, pa
         case "global_css":
             return lower.endsWith(".css") || lower.endsWith(".txt") ? null : "CSS 目的地需要 .css 或 .txt 文件";
         case "custom_app":
-            return lower.endsWith(".zip") || lower.endsWith(".floatapp") || lower.endsWith(".html") || lower.endsWith(".htm") ? null : "应用需要 zip/.floatapp 安装包或单 HTML 文件";
+            return lower.endsWith(".zip") || lower.endsWith(".html") || lower.endsWith(".htm") ? null : "应用需要 zip 安装包或单 HTML 文件";
         case "plugin":
             return lower.endsWith(".js") || lower.endsWith(".mjs") || lower.endsWith(".txt") ? null : "插件需要 JS 源码文件";
         case "preset_entry":
@@ -557,7 +555,7 @@ export async function importResourceHubFile(
             const file = new File([buffer], filename);
             const { loadCustomAppPackage, loadSingleHtmlCustomApp, installCustomAppAsync, CUSTOM_APP_PLACE_DESKTOP_EVENT } = await import("./custom-app-storage");
             const { applyCustomAppRegistrationsAsync } = await import("./custom-app-registration");
-            const app = lower.endsWith(".zip") || lower.endsWith(".floatapp") ? await loadCustomAppPackage(file) : await loadSingleHtmlCustomApp(file);
+            const app = lower.endsWith(".zip") ? await loadCustomAppPackage(file) : await loadSingleHtmlCustomApp(file);
             // 打来源标记：别人的作品，本机能玩，但不进本地测试、不能再发布到应用广场
             const tagged = { ...app, resourceHubPath: path };
             // 重复导入（作者更新了资源）：包每次都会拿到新的随机运行时 id，直接装必然

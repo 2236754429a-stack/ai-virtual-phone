@@ -76,7 +76,7 @@ export async function GET() {
       return NextResponse.json({ ok: false, games: [], error: result.error }, { status: result.status });
     }
     const games = result.data.map(normalizeGame).filter((game): game is GameTemplate => Boolean(game));
-    return NextResponse.json({ ok: true, games }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ ok: true, games }, { headers: CACHE_HEADERS });
   } catch (err) {
     return NextResponse.json({ ok: false, games: [], error: formatSupabaseRestError(err) }, { status: 500 });
   }

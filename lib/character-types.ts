@@ -7,8 +7,6 @@ export type Character = {
   briefPersonaUpdatedAt?: string; // 简介生成时间；早于 updatedAt 时编辑器提示「设定已更新，建议重新生成」
   wechatID?: string;     // 手机号格式的微信号
   personality?: string;    // 角色性格
-  /** 回复语言偏好；en 表示自然语言只用英文。 */
-  responseLanguage?: "default" | "en";
   timeZone?: string;       // IANA 时区，例如 America/New_York；空值表示跟随系统时间
   tags?: string[];
   createdAt: string;

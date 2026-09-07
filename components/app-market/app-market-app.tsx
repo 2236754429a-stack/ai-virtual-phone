@@ -34,7 +34,6 @@ import { permissionLabelWithContext } from "@/lib/custom-app-permission-labels";
 import { submitContentReport } from "@/lib/moderation-client";
 import {
   fetchCustomAppMarketItems,
-  fetchCustomAppMarketItemByAppId,
   fetchMyCustomAppMarketItems,
   deleteCustomAppMarketItem,
   publishCustomAppMarketItem,
@@ -425,16 +424,14 @@ export function AppMarketApp({ onClose, onOpenCustomApp, onInstallToDesktop, onN
     setMarketBusy(true);
     setMarketError("");
     try {
-      const [publicResult, ownResult] = await Promise.allSettled([
+      const [publicApps, ownApps] = await Promise.all([
         fetchCustomAppMarketItems(),
         fetchMyCustomAppMarketItems(),
       ]);
-      if (publicResult.status === "fulfilled") setMarketApps(publicResult.value);
-      if (ownResult.status === "fulfilled") setMyMarketApps(ownResult.value);
-      if (publicResult.status === "rejected" && ownResult.status === "rejected") {
-        const reason = publicResult.reason ?? ownResult.reason;
-        setMarketError(reason instanceof Error ? reason.message : String(reason));
-      }
+      setMarketApps(publicApps);
+      setMyMarketApps(ownApps);
+    } catch (err) {
+      setMarketError(err instanceof Error ? err.message : String(err));
     } finally {
       setMarketBusy(false);
       marketRefreshCountRef.current = Math.max(0, marketRefreshCountRef.current - 1);
@@ -978,25 +975,15 @@ export function AppMarketApp({ onClose, onOpenCustomApp, onInstallToDesktop, onN
   }
 
   async function resolveMarketItemForInstalled(appId: string): Promise<CustomAppMarketItem | null> {
-    // Always use the exact no-store lookup so an update click cannot reuse an old
-    // market list captured when the app market was opened.
-    try {
-      const exact = await fetchCustomAppMarketItemByAppId(appId);
-      if (exact) return exact;
-    } catch {
-      // Fall through to independently settled public/own lists.
-    }
-    const [publicResult, ownResult] = await Promise.allSettled([
+    const cached = marketItemByAppId.get(appId);
+    if (cached) return cached;
+    const [publicApps, ownApps] = await Promise.all([
       fetchCustomAppMarketItems(),
       fetchMyCustomAppMarketItems(),
     ]);
-    if (publicResult.status === "fulfilled") setMarketApps(publicResult.value);
-    if (ownResult.status === "fulfilled") setMyMarketApps(ownResult.value);
-    if (publicResult.status === "rejected" && ownResult.status === "rejected") return null;
-    return newestCustomAppMarketItem([
-      ...(publicResult.status === "fulfilled" ? publicResult.value : []),
-      ...(ownResult.status === "fulfilled" ? ownResult.value : []),
-    ], appId);
+    setMarketApps(publicApps);
+    setMyMarketApps(ownApps);
+    return newestCustomAppMarketItem([...publicApps, ...ownApps], appId);
   }
 
   async function updateInstalledAppFromMarket(app: InstalledCustomApp) {

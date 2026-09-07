@@ -28,7 +28,7 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promi
 
 export async function fetchGameHallTemplates(_userId?: string): Promise<GameTemplate[]> {
   const [list, state] = await Promise.all([
-    fetchJson<GameHallListResponse>("/api/game-hall/list", { cache: "no-store" }),
+    fetchJson<GameHallListResponse>("/api/game-hall/list"),
     fetchJson<GameHallStateResponse>("/api/game-hall/state", { cache: "no-store" })
       .catch(() => ({ ok: true, likedIds: [], favoriteIds: [] } as GameHallStateResponse)),
   ]);

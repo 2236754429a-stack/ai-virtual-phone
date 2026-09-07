@@ -10,14 +10,7 @@ import { ConfirmDialog } from "@/components/ui/modal";
 import { Toggle, Input } from "@/components/ui/form";
 import { Alert } from "@/components/ui/feedback";
 
-const SUPPORTED_VOICE_PROVIDERS = new Set(["Minimax", "OpenAI", "Mossland"]);
-const MOSSLAND_DEFAULT_BASE_URL = "https://api.mosi.cn";
-const MOSSLAND_DEFAULT_MODEL = "moss-tts-1.5-flash";
-const MOSSLAND_DEFAULT_VOICE_ID = "0376f20a-d7a9-406a-9e22-c78c688a1345";
-const MOSSLAND_FORMAT_OPTIONS = [
-    { value: "mp3", label: "MP3" },
-    { value: "wav", label: "WAV" },
-] as const;
+const SUPPORTED_VOICE_PROVIDERS = new Set(["Minimax", "OpenAI"]);
 const MINIMAX_BASE_URL_OPTIONS = [
     { id: "cn", label: "国内版", baseUrl: "https://api.minimaxi.com/v1" },
     { id: "global", label: "海外版", baseUrl: "https://api.minimax.io/v1" },
@@ -37,7 +30,6 @@ const VOICE_PROVIDER_OPTIONS = [
     { value: "OpenAI", label: "OpenAI TTS" },
     { value: "MinimaxCN", label: "Minimax 语音国内版" },
     { value: "MinimaxGlobal", label: "Minimax 语音海外版" },
-    { value: "Mossland", label: "Mossland 语音" },
 ];
 
 const DEFAULT_VOICE_CONFIGS: VoiceApiConfig[] = [
@@ -190,8 +182,7 @@ function uniqueOptions(options: VoiceOption[]): VoiceOption[] {
 }
 
 function defaultVoiceOptions(provider: string): VoiceOption[] {
-    if (provider === "OpenAI") return DEFAULT_OPENAI_VOICES;
-    return DEFAULT_MINIMAX_VOICES;
+    return provider === "OpenAI" ? DEFAULT_OPENAI_VOICES : DEFAULT_MINIMAX_VOICES;
 }
 
 function voiceOptionsForConfig(config: VoiceApiConfig, fetchedVoices: Record<string, VoiceOption[]>): VoiceOption[] {
@@ -231,7 +222,6 @@ function makeCloneVoiceId(config: VoiceApiConfig): string {
 
 function providerSelectValue(config: VoiceApiConfig): string {
     if (config.provider === "OpenAI") return "OpenAI";
-    if (config.provider === "Mossland") return "Mossland";
     return config.baseUrl === GLOBAL_MINIMAX_BASE_URL ? "MinimaxGlobal" : "MinimaxCN";
 }
 
@@ -260,12 +250,10 @@ export function VoiceSettings() {
     // Load from localStorage on mount
     useEffect(() => {
         const stored = loadVoiceConfigs();
-        const loaded = normalizeVoiceConfigs(stored).map(config => config.provider === "Mossland" && !config.defaultVoice.trim()
-            ? { ...config, defaultVoice: MOSSLAND_DEFAULT_VOICE_ID }
-            : config);
+        const loaded = normalizeVoiceConfigs(stored);
         if (loaded.length > 0) {
             setConfigs(loaded);
-            if (loaded.length !== stored.length || loaded.some((config, index) => config.defaultVoice !== stored[index]?.defaultVoice)) saveVoiceConfigs(loaded);
+            if (loaded.length !== stored.length) saveVoiceConfigs(loaded);
         } else {
             setConfigs(DEFAULT_VOICE_CONFIGS);
             saveVoiceConfigs(DEFAULT_VOICE_CONFIGS);
@@ -325,18 +313,6 @@ export function VoiceSettings() {
             });
             setManualModelIds(prev => ({ ...prev, [id]: true }));
             setManualVoiceIds(prev => ({ ...prev, [id]: false }));
-            return;
-        }
-        if (providerOption === "Mossland") {
-            updateConfig(id, {
-                provider: "Mossland",
-                baseUrl: MOSSLAND_DEFAULT_BASE_URL,
-                model: MOSSLAND_DEFAULT_MODEL,
-                defaultVoice: current?.provider === "Mossland" ? (current.defaultVoice || MOSSLAND_DEFAULT_VOICE_ID) : MOSSLAND_DEFAULT_VOICE_ID,
-                mosslandFormat: current?.provider === "Mossland" ? (current.mosslandFormat || "mp3") : "mp3",
-            });
-            setManualModelIds(prev => ({ ...prev, [id]: true }));
-            setManualVoiceIds(prev => ({ ...prev, [id]: true }));
             return;
         }
         const wasMinimax = current?.provider === "Minimax";
@@ -523,23 +499,6 @@ export function VoiceSettings() {
 
             } else if (config.provider === "OpenAI") {
                 setFetchedVoices(prev => ({ ...prev, [config.id]: DEFAULT_OPENAI_VOICES }));
-            } else if (config.provider === "Mossland") {
-                if (!config.apiKey.trim()) {
-                    setFetchError(prev => ({ ...prev, [config.id]: "填写 API Key 后可同步 Mossland 音色列表" }));
-                    setFetchedVoices(prev => ({ ...prev, [config.id]: config.customVoices || [] }));
-                    return;
-                }
-                const response = await fetch("/api/voice/mossland/voices", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ apiKey: config.apiKey }),
-                });
-                const data = await response.json().catch(() => ({}));
-                if (!response.ok) throw new Error(data.message || data.error || `同步失败 (${response.status})`);
-                const voices = Array.isArray(data.voices) ? data.voices as VoiceOption[] : [];
-                const nextCustomVoices = uniqueOptions([...voices, ...(config.customVoices || [])]);
-                updateConfig(config.id, { customVoices: nextCustomVoices });
-                setFetchedVoices(prev => ({ ...prev, [config.id]: nextCustomVoices }));
             } else {
                 throw new Error("该服务商暂不支持拉取模型列表");
             }
@@ -718,27 +677,6 @@ export function VoiceSettings() {
                                                 placeholder="输入密钥..."
                                             />
                                         </div>
-                                        {config.provider === "Mossland" && (
-                                            <>
-                                                <div className="flex flex-col gap-1">
-                                                    <label className="menu-desc ml-1">Mossland 接口地址</label>
-                                                    <Input type="text" value={config.baseUrl || MOSSLAND_DEFAULT_BASE_URL} onChange={(e) => updateConfig(config.id, { baseUrl: e.target.value })} placeholder={MOSSLAND_DEFAULT_BASE_URL} />
-                                                    <span className="menu-desc ml-1">使用同源代理访问 Mossland，避免手机浏览器 CORS 限制。</span>
-                                                </div>
-                                                <div className="flex flex-col gap-1">
-                                                    <label className="menu-desc ml-1">Mossland 模型</label>
-                                                    <Input type="text" value={config.model || MOSSLAND_DEFAULT_MODEL} onChange={(e) => updateConfig(config.id, { model: e.target.value })} placeholder={MOSSLAND_DEFAULT_MODEL} />
-                                                </div>
-                                                <div className="flex flex-col gap-1">
-                                                    <label className="menu-desc ml-1">返回格式</label>
-                                                    <select className="ui-select" value={config.mosslandFormat || "mp3"} onChange={(e) => updateConfig(config.id, { mosslandFormat: e.target.value === "wav" ? "wav" : "mp3" })}>
-                                                        {MOSSLAND_FORMAT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                                                    </select>
-                                                    <span className="menu-desc ml-1">请填写 Mossland 创建的 voice_id；可点击“同步音色列表”。</span>
-                                                </div>
-                                            </>
-                                        )}
-
                                         {config.provider === "OpenAI" && (
                                             <>
                                                 <div className="flex flex-col gap-1">
@@ -914,7 +852,7 @@ export function VoiceSettings() {
                                                                 type="text"
                                                                 value={config.defaultVoice}
                                                                 onChange={(e) => updateConfig(config.id, { defaultVoice: e.target.value })}
-                                                                placeholder={config.provider === "OpenAI" ? "alloy" : config.provider === "Mossland" ? "voice_id" : "male-qn-qingse 或克隆 Voice ID"}
+                                                                placeholder={config.provider === "OpenAI" ? "alloy" : "male-qn-qingse 或克隆 Voice ID"}
                                                                 className="flex-1"
                                                             />
                                                             <button
@@ -973,7 +911,7 @@ export function VoiceSettings() {
                                                         className="ui-btn ui-btn ui-btn-soft-action w-full"
                                                     >
                                                         <RefreshCw size={16} className={isFetching[config.id] ? "animate-spin" : ""} />
-                                                        {isFetching[config.id] ? "同步中..." : config.provider === "Minimax" || config.provider === "Mossland" ? "同步音色列表" : "显示默认音色"}
+                                                        {isFetching[config.id] ? "同步中..." : config.provider === "Minimax" ? "同步音色列表" : "显示默认音色"}
                                                     </button>
                                                     {config.provider === "Minimax" && (
                                                         <button

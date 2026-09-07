@@ -85,10 +85,9 @@ export async function POST(request: Request) {
     });
     const signData = await sign.json().catch(() => ({})) as { signedURL?: string };
     if (!sign.ok || !signData.signedURL) {
-      const detail = typeof signData === "object" && signData && "message" in signData
-        ? String((signData as { message?: unknown }).message ?? "")
-        : "";
-      return NextResponse.json({ ok: false, error: detail ? `生成应用包下载链接失败：${detail}` : "生成应用包下载链接失败，请检查存储桶和应用包是否仍存在。" }, { status: 502 });
+      // 签名失败（如对象缺失/存储异常）：桶还是公开状态的老部署回落直链，保证不断档
+      if (app.package_url) return NextResponse.json({ ok: true, url: app.package_url, fallback: true });
+      return NextResponse.json({ ok: false, error: "生成下载链接失败，请稍后再试。" }, { status: 500 });
     }
     return NextResponse.json({ ok: true, url: `${config.url}/storage/v1${signData.signedURL}`, expiresIn: SIGN_TTL_SECONDS });
   } catch (err) {

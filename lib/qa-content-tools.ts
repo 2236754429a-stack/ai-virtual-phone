@@ -773,12 +773,7 @@ let marketOwnershipCache: { at: number; data: MarketOwnershipData } | null = nul
 
 async function fetchMarketOwnershipData(): Promise<MarketOwnershipData> {
     if (marketOwnershipCache && Date.now() - marketOwnershipCache.at < 60_000) return marketOwnershipCache.data;
-    const [publicResult, ownResult] = await Promise.allSettled([fetchCustomAppMarketItems(), fetchMyCustomAppMarketItems()]);
-    if (publicResult.status === "rejected" && ownResult.status === "rejected") {
-        throw publicResult.reason instanceof Error ? publicResult.reason : new Error(String(publicResult.reason));
-    }
-    const publicItems = publicResult.status === "fulfilled" ? publicResult.value : [];
-    const myItems = ownResult.status === "fulfilled" ? ownResult.value : [];
+    const [publicItems, myItems] = await Promise.all([fetchCustomAppMarketItems(), fetchMyCustomAppMarketItems()]);
     const data: MarketOwnershipData = { myItems, itemByAppId: buildMarketItemByAppId(publicItems, myItems) };
     marketOwnershipCache = { at: Date.now(), data };
     return data;

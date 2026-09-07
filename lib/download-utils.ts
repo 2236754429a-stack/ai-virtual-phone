@@ -44,14 +44,13 @@ export async function downloadFile(blob: Blob, filename: string, options: Downlo
                     setTimeout(() => URL.revokeObjectURL(url), 1000);
                     return;
                 }
-                // A non-abort share failure usually means the webview lost file-share
-                // support or user activation. Fall back to the normal object download
-                // instead of making Resource Hub downloads impossible on that device.
-                anchorDownload();
-                setTimeout(() => URL.revokeObjectURL(url), 1000);
-                return;
+                // Any other failure (webview without real file-share support, lost user
+                // activation, etc.) is surfaced to the caller on iOS instead of opening
+                // the blob URL, which can navigate away from the app.
             }
         }
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        throw new Error("当前浏览器没有成功打开系统分享，请在 Safari 中重试，或导出轻量备份后再试。");
     }
 
     anchorDownload();

@@ -152,12 +152,18 @@ export async function inspectData(): Promise<DataSnapshot> {
 export type BackupOptions = {
   /** Strip embedded images/audio/video (keeps text/config/structure + avatars). */
   excludeMedia?: boolean;
-  /** Include personal-cloud connection info in a local export only. */
+  /**
+   * 把云服务连接信息（项目地址 + 密钥 + 专用项目标记）一并写进备份。
+   * 只给本地导出的文件用——文件在用户自己手里，恢复时靠它直接连回原来的云项目；
+   * 云端备份不传这个（连接云的凭据不该躺在那个云里）。
+   */
   includeCloudCredentials?: boolean;
 };
 
+/** 云服务连接信息的附加数据源：挂在「设置与规则」模块下，导入时按普通键值写回 */
 const CLOUD_CREDENTIAL_SOURCE: DataSource = { type: "kv", label: "云服务连接信息", keys: CLOUD_CREDENTIAL_KV_KEYS };
 const CLOUD_CREDENTIAL_MODULE: DataModuleId = "settings";
+/** 文件名里的序号远离正常数据源的下标，导入时与它们互不冲突 */
 const CLOUD_CREDENTIAL_SOURCE_INDEX = 900;
 
 // Modules whose media is kept even in "exclude media" mode (avatars are identity).
@@ -372,18 +378,19 @@ export async function createBackupBlob(moduleIds?: DataModuleId[], options: Back
     totalBytes += moduleBytes;
   }
 
-  if (options.includeCloudCredentials && selectedModules.some((module) => module.id === CLOUD_CREDENTIAL_MODULE)) {
+  // 云服务连接信息：不在任何模块的常规数据源里（云端备份要排除它），本地文件单独补一份
+  if (options.includeCloudCredentials && selectedModules.some((m) => m.id === CLOUD_CREDENTIAL_MODULE)) {
     const sourcePayload = await exportSource(CLOUD_CREDENTIAL_SOURCE);
     const records = countSourceRecords(sourcePayload);
     if (records > 0) {
       const payload: ModulePayload = { moduleId: CLOUD_CREDENTIAL_MODULE, sources: [sourcePayload] };
       const json = JSON.stringify(payload);
-      const bytes = utf8Bytes(json);
+      const jsonBytes = utf8Bytes(json);
       zip.file(`modules/${CLOUD_CREDENTIAL_MODULE}/${String(CLOUD_CREDENTIAL_SOURCE_INDEX).padStart(3, "0")}.json`, new Blob([json], { type: "application/json" }));
-      const module = manifestModules.find((item) => item.id === CLOUD_CREDENTIAL_MODULE);
-      if (module) { module.records += records; module.bytes += bytes; }
+      const entry = manifestModules.find((m) => m.id === CLOUD_CREDENTIAL_MODULE);
+      if (entry) { entry.records += records; entry.bytes += jsonBytes; }
       totalRecords += records;
-      totalBytes += bytes;
+      totalBytes += jsonBytes;
     }
   }
 

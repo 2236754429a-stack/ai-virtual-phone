@@ -186,14 +186,9 @@ export async function searchNetease(query: string, limit = 20): Promise<NeteaseS
     const base = neteaseBase();
     if (!base) return [];
     try {
-        let resp = await fetch(withNeteaseParams(`${base}/cloudsearch?keywords=${encodeURIComponent(query)}&limit=${limit}`));
-        if (resp.status === 404) {
-            // The Tencent cloud service exposes the same payload under /search,
-            // while full NeteaseCloudMusicApi instances use /cloudsearch.
-            resp = await fetch(withNeteaseParams(`${base}/search?keywords=${encodeURIComponent(query)}&limit=${limit}`));
-        }
+        const resp = await fetch(withNeteaseParams(`${base}/cloudsearch?keywords=${encodeURIComponent(query)}&limit=${limit}`));
         const data = await resp.json();
-        const songs = data?.result?.songs ?? data?.songs ?? data?.result?.items;
+        const songs = data?.result?.songs;
         if (!Array.isArray(songs)) return [];
         return songs.map(mapSongToSearchResult);
     } catch (e) {

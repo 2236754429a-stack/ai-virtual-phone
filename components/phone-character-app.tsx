@@ -1829,7 +1829,6 @@ function CharArchiveView({
   const [name, setName] = useState(char.name || "");
   const [persona, setPersona] = useState(char.persona || "");
   const [personality, setPersonality] = useState(char.personality || "");
-  const [responseLanguage, setResponseLanguage] = useState<"default" | "en">(char.responseLanguage || "default");
   const [briefPersona, setBriefPersona] = useState(char.briefPersona || "");
   const [briefBusy, setBriefBusy] = useState(false);
   const [briefError, setBriefError] = useState("");
@@ -1855,11 +1854,10 @@ function CharArchiveView({
         name,
         persona,
         personality,
-        responseLanguage,
         timeZone,
       },
     });
-  }, [isEditing, name, persona, personality, responseLanguage, timeZone, char.id]);
+  }, [isEditing, name, persona, personality, timeZone, char.id]);
 
   // Listen for mascot fill events (unified)
   useEffect(() => {
@@ -1890,7 +1888,6 @@ function CharArchiveView({
     if (name !== (char.name || "")) return true;
     if (persona !== (char.persona || "")) return true;
     if (personality !== (char.personality || "")) return true;
-    if (responseLanguage !== (char.responseLanguage || "default")) return true;
     if (briefPersona !== (char.briefPersona || "")) return true;
     if (timeZone !== (char.timeZone || "")) return true;
     if (avatar !== (char.avatar || null)) return true;
@@ -1912,7 +1909,6 @@ function CharArchiveView({
       setName(char.name || "");
       setPersona(char.persona || "");
       setPersonality(char.personality || "");
-      setResponseLanguage(char.responseLanguage || "default");
       setBriefPersona(char.briefPersona || "");
       setBriefError("");
       setTimeZone(char.timeZone || "");
@@ -1967,7 +1963,6 @@ function CharArchiveView({
         name: name.trim() || char.name || "UNNAMED",
         persona,
         personality: personality.trim() || undefined,
-        responseLanguage,
         briefPersona: trimmedBrief || undefined,
         // 简介变动才刷新时间戳；未动则保留原值（供「设定已更新」过期提示判断）
         briefPersonaUpdatedAt: trimmedBrief
@@ -2245,24 +2240,7 @@ function CharArchiveView({
             )}
           </div>
 
-          <div className="char-log-entry mb-4">
-            <div className="char-log-entry-header">
-              <span>RESPONSE LANGUAGE</span>
-            </div>
-            {isEditing ? (
-              <select
-                className="ui-select mt-2"
-                value={responseLanguage}
-                onChange={(event) => setResponseLanguage(event.target.value === "en" ? "en" : "default")}
-              >
-                <option value="default">FOLLOW DEFAULT</option>
-                <option value="en">ENGLISH ONLY</option>
-              </select>
-            ) : (
-              <p className="char-archive-p">{responseLanguage === "en" ? "ENGLISH ONLY" : "FOLLOW DEFAULT"}</p>
-            )}
-          </div>
-
+          {/* Personality — shown when editing or when has content */}
           {(isEditing || personality.trim()) && (
             <div className="char-log-entry mb-4 border-t border-dashed border-[#999] pt-3">
               <div className="char-log-entry-header">

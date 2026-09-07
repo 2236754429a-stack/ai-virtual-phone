@@ -2,6 +2,7 @@
 
 import type { VoiceApiConfig, ContentAppId } from "./settings-types";
 import { loadVoiceConfigs, loadBindingConfig, resolveBinding } from "./settings-storage";
+import { MOSS_TTS_MODEL, normalizeMosslandInput } from "./mossland-tts-input";
 
 export type VoiceApiConfigResolved = VoiceApiConfig;
 
@@ -185,6 +186,10 @@ async function synthesizeMossland(text: string, config: VoiceApiConfig): Promise
     if (!config.apiKey) throw new Error("Mossland API Key 未配置");
     if (!config.defaultVoice.trim()) throw new Error("请填写 Mossland voice_id");
 
+    const model = config.model || MOSS_TTS_MODEL;
+    const input = normalizeMosslandInput(text, model);
+    if (!input) return null;
+
     // api.mosi.cn rejects browser CORS preflight. The same-origin route forwards
     // this request without persisting the user-provided API key.
     const response = await fetchWithTimeout("/api/voice/mossland", {
@@ -192,9 +197,9 @@ async function synthesizeMossland(text: string, config: VoiceApiConfig): Promise
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             apiKey: config.apiKey,
-            input: text,
+            input,
             voiceId: config.defaultVoice,
-            model: config.model || "moss-tts-1.5-flash",
+            model,
             responseFormat: config.mosslandFormat || "mp3",
         }),
     });

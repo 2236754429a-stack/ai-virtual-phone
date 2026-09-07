@@ -9,8 +9,6 @@ import {
   generateWorldId,
   saveMapWorld,
   createInitialSave,
-  saveGame,
-  addAgentToSave,
   loadDMPrompts,
   saveDMPrompts,
   loadDMTokenConfig,
@@ -25,8 +23,9 @@ import {
   DEFAULT_ADVENTURE_INTERACTION_CONFIG,
   type AdventureInteractionConfig,
 } from "@/lib/map-storage";
-import { generateWorldSkeleton, DEFAULT_WORLD_GEN_PROMPT, DEFAULT_DM_SCENE_PROMPT, DEFAULT_DM_RESOLVE_PROMPT, DEFAULT_DM_ENDING_PROMPT, DEFAULT_ADVENTURE_SUMMARY_PROMPT } from "@/lib/map-rpg-engine";
-import { generateMap, type GeoJSONData } from "@/lib/map-engine";
+import { DEFAULT_WORLD_GEN_PROMPT, DEFAULT_DM_SCENE_PROMPT, DEFAULT_DM_RESOLVE_PROMPT, DEFAULT_DM_ENDING_PROMPT, DEFAULT_ADVENTURE_SUMMARY_PROMPT } from "@/lib/map-rpg-engine";
+import { type GeoJSONData } from "@/lib/map-engine";
+import { createAdventureWorld } from "@/lib/adventure-world-creation";
 import { loadApiConfigs, loadBindingConfig, resolveBinding } from "@/lib/settings-storage";
 import type { MapWorld, GameSave } from "@/lib/map-types";
 import { Toggle } from "@/components/ui/form";
@@ -174,11 +173,17 @@ export default function MapLobby({ onClose, onStartGame }: Props) {
     const apiConfigs = loadApiConfigs();
     const bindings = loadBindingConfig();
     const firstChar = characters[0];
-    const slot = firstChar ? resolveBinding(bindings, firstChar.id, "chat") : null;
-    const apiConfig = (slot?.apiConfigId ? apiConfigs.find(c => c.id === slot.apiConfigId) : null) || apiConfigs.find(c => c.apiKey) || apiConfigs[0];
-    if (!apiConfig?.apiKey) { setError("未找到有效的API配置，请先在设置中配置API"); return; }
+    const adventureSlot = firstChar ? resolveBinding(bindings, firstChar.id, "adventure") : null;
+    const chatSlot = firstChar ? resolveBinding(bindings, firstChar.id, "chat") : null;
+    const apiConfig = (adventureSlot?.apiConfigId ? apiConfigs.find(c => c.id === adventureSlot.apiConfigId) : null)
+      || (chatSlot?.apiConfigId ? apiConfigs.find(c => c.id === chatSlot.apiConfigId) : null)
+      || apiConfigs.find(c => c.apiKey) || apiConfigs[0];
+    if (!apiConfig?.apiKey) {
+      setError("未找到有效的API配置，请先在设置中配置API");
+      setIsGenerating(false);
+      return;
+    }
 
-    // 1. Create placeholder world immediately
     const now = new Date().toISOString();
     const worldId = generateWorldId();
     const placeholder: MapWorld = {
@@ -194,54 +199,25 @@ export default function MapLobby({ onClose, onStartGame }: Props) {
     setMode("list");
     setIsGenerating(false);
 
-    // 2. Capture selected chars for save creation later
     const charIdsSnapshot = [...selectedCharIds];
-
-    // 3. Generate in background
     try {
-      const vars = {
-        world_desc: description,
-        tone: tone || "自由发挥",
-        region_count: String(regionCount),
-        main_quest_type: mainQuestType || "自由发挥",
-        npc_count: String(npcCount),
-        difficulty: difficulty || "适中",
-      };
-      const skeleton = await generateWorldSkeleton(description, [], apiConfig, vars);
-
       const resp = await fetch("/countries.geo.json");
+      if (!resp.ok) throw new Error(`地图底图加载失败（${resp.status}）`);
       const geoData: GeoJSONData = await resp.json();
-      const renderedMap = generateMap(skeleton.mapInput, geoData);
-
-      // 4. Update world with real data (remove status = complete)
-      const world: MapWorld = {
-        id: worldId,
-        skeleton,
-        renderedMap,
-        createdAt: now,
-        updatedAt: new Date().toISOString(),
-      };
-      saveMapWorld(world);
-
-      // 5. Create initial save with selected characters
-      const startNode = renderedMap.l1Nodes[0]?.id || "l1_0";
-      let save = createInitialSave(world.id, startNode);
-      for (const cid of charIdsSnapshot) {
-        const ch = characters.find(c => c.id === cid);
-        save = addAgentToSave(save, cid, ch?.personality || "");
-      }
-      const startRegionIdx = 0;
-      const discovered: string[] = [startNode];
-      renderedMap.l2Nodes.forEach((n, i) => { if (n.regionIdx === startRegionIdx) discovered.push(`l2_${i}`); });
-      renderedMap.l3Nodes.forEach((n, i) => { if (n.regionIdx === startRegionIdx) discovered.push(`l3_${i}`); });
-      renderedMap.l1Nodes.forEach((n) => { if (!discovered.includes(n.id)) discovered.push(n.id); });
-      save.discoveredNodes = discovered;
-      save.journal[0].locationName = renderedMap.l1Nodes[0]?.nameCn || "起点";
-      saveGame(save);
-
+      await createAdventureWorld({
+        description,
+        tone,
+        regionCount,
+        mainQuestType,
+        npcCount,
+        difficulty,
+        companionNames: charIdsSnapshot.map(id => characters.find(c => c.id === id)?.name || "").filter(Boolean),
+        worldId,
+        apiConfig,
+        geoData,
+      });
       setWorlds(loadMapWorlds());
     } catch (e) {
-      // Mark as failed + surface reason and raw LLM output in a dialog.
       const reason = e instanceof Error ? e.message : String(e);
       const raw = (e as { rawOutput?: string })?.rawOutput || "";
       const failed: MapWorld = { ...placeholder, status: "failed", statusMessage: reason, failureRaw: raw, updatedAt: new Date().toISOString() };

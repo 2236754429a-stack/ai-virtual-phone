@@ -14,7 +14,11 @@ import type { LlmToolDefinition } from "./llm-provider-adapter";
 import type { ToolCall, ToolResult } from "./tool-executor";
 import type { MascotPageContext } from "./mascot-context";
 import type { Prompt } from "./settings-types";
-import { CHARACTER_CARD_PROMPT, CHARACTER_WORLD_PROMPT, WORLDBOOK_PROMPT, PRESET_PROMPT, GENERAL_PRESET_PROMPT, REGEX_PROMPT, CSS_PROMPT, WIDGET_PROMPT, MIXOLOGY_PROMPT } from "./mascot-prompts";
+import { ADVENTURE_PROMPT, CHARACTER_CARD_PROMPT, CHARACTER_WORLD_PROMPT, WORLDBOOK_PROMPT, PRESET_PROMPT, GENERAL_PRESET_PROMPT, REGEX_PROMPT, CSS_PROMPT, WIDGET_PROMPT, MIXOLOGY_PROMPT } from "./mascot-prompts";
+import { loadMapWorlds, hydrateMapStorage } from "./map-storage";
+import { loadCharacters } from "./character-storage";
+import { resolveAuxiliaryApiConfig } from "./settings-storage";
+import { createAdventureWorld } from "./adventure-world-creation";
 import {
     buildCssAssetNineSliceCss,
     calibrateCssAssetNineSlice,
@@ -656,7 +660,7 @@ const REMOVE_DIY_WIDGET_SCHEMA = {
 const NAVIGATE_SCHEMA = {
     type: "object",
     properties: {
-        page: { type: "string", enum: ["chat", "characters", "story", "vnmode", "moments", "calendar", "music", "resources", "settings"], description: "页面名" },
+        page: { type: "string", enum: ["chat", "characters", "story", "vnmode", "mapmode", "moments", "calendar", "music", "resources", "settings"], description: "页面名；mapmode=冒险" },
         subpage: { type: "string", enum: ["presets", "worldbook", "regex", "api", "voice", "binding", "data", "identity"], description: "子页面（仅 settings 下有效）" },
     },
     required: ["page"],
@@ -679,6 +683,27 @@ const IMAGE_ASSET_USAGE_GUIDE = [
 ].join("\n");
 
 // ── 套件定义 ────────────────────────────────────────────
+
+const LIST_ADVENTURE_WORLDS_SCHEMA = {
+    type: "object",
+    properties: {},
+    additionalProperties: false,
+};
+
+const CREATE_ADVENTURE_WORLD_SCHEMA = {
+    type: "object",
+    properties: {
+        description: { type: "string", description: "世界观和冒险主题的完整描述" },
+        tone: { type: "string", description: "世界风格，例如黑暗奇幻、轻松群像、悬疑" },
+        regionCount: { type: "number", description: "区域数量，默认 6，建议 4-8" },
+        mainQuestType: { type: "string", description: "主线类型，例如调查、护送、生存" },
+        npcCount: { type: "number", description: "NPC 数量，默认 12，建议 8-20" },
+        difficulty: { type: "string", description: "难度，例如轻松、适中、困难" },
+        companionNames: { type: "array", items: { type: "string" }, description: "可选同行角色全名数组，必须来自读取角色" },
+    },
+    required: ["description"],
+    additionalProperties: false,
+};
 
 // ── 线上聊天状态栏（自定义状态栏）──────────────────────
 const STATUS_BAR_SESSION_DESC = "会话名：单聊填角色名/备注名，群聊填群名。不传则用当前页面正在打开的会话；没打开时工具会返回可选会话列表。";
@@ -1056,6 +1081,16 @@ export const MASCOT_TOOL_PACKAGES: MascotToolPackage[] = [
         ],
         usageGuide: MIXOLOGY_PROMPT,
     },
+    {
+        id: "adventure_pack",
+        label: "冒险套件",
+        description: "查看和创建地图 RPG 冒险世界；创建后自动生成地图并建立初始存档。",
+        subTools: [
+            { name: "列出冒险世界", description: "列出已保存的冒险世界、生成状态和更新时间。", parameterSchema: LIST_ADVENTURE_WORLDS_SCHEMA },
+            { name: "创建冒险世界", description: "按冒险 App 的标准 tagged-block 世界格式生成并保存一个完整世界和初始存档。", parameterSchema: CREATE_ADVENTURE_WORLD_SCHEMA },
+        ],
+        usageGuide: ADVENTURE_PROMPT,
+    },
 ];
 
 // 导航是独立工具（不在套件里），直接暴露
@@ -1079,7 +1114,7 @@ export function buildMascotToolsListPrompt(): string {
     // 导航工具不在套件里，schema 直接在这里展开（只一个工具，省得用 [获取指令] 再加载）
     lines.push("【独立工具】导航 — 跳转到指定页面，可直接调用。");
     lines.push("  参数：");
-    lines.push("    · page (必填) — 页面名。可选值：chat / characters / story / vnmode / moments / calendar / music / resources / settings");
+    lines.push("    · page (必填) — 页面名。可选值：chat / characters / story / vnmode / mapmode(冒险) / moments / calendar / music / resources / settings");
     lines.push("    · subpage (可选) — 子页面（仅 page=settings 时有效）。可选值：presets / worldbook / regex / api / voice / binding / data / identity");
     lines.push("  调用：[执行动作:导航({\"page\":\"chat\"})] 或 [执行动作:导航({\"page\":\"settings\",\"subpage\":\"presets\"})]");
     lines.push("");
@@ -1220,6 +1255,8 @@ const MASCOT_NATIVE_TOOL_NAMES: Record<string, string> = {
     "预览DIY组件": "mascot_preview_diy_widget",
     "摆放组件": "mascot_place_widget",
     "移除DIY组件": "mascot_remove_diy_widget",
+    "列出冒险世界": "mascot_list_adventure_worlds",
+    "创建冒险世界": "mascot_create_adventure_world",
 };
 
 const MASCOT_NATIVE_LOADER_NAMES: Record<string, string> = {
@@ -1233,6 +1270,7 @@ const MASCOT_NATIVE_LOADER_NAMES: Record<string, string> = {
     status_bar_pack: "mascot_load_status_bar_pack",
     widget_pack: "mascot_load_widget_pack",
     mixology_pack: "mascot_load_mixology_pack",
+    adventure_pack: "mascot_load_adventure_pack",
 };
 
 export function getMascotNativeToolName(displayName: string): string {
@@ -1385,6 +1423,10 @@ export async function executeMascotToolCall(call: ToolCall, ctx: MascotToolConte
             case "摆放组件": return await handlePlaceWidget(call.args);
             case "移除DIY组件": return await handleRemoveDiyWidget(call.args);
 
+            // ─── 冒险 ───
+            case "列出冒险世界": return await handleListAdventureWorlds();
+            case "创建冒险世界": return await handleCreateAdventureWorld(call.args);
+
             // ─── 独家特调 ───
             case "列出酒柜": case "读取材料": case "读取制作说明": case "创建材料": case "更新材料": case "保存配方":
             case "列出连接器": case "创建连接器": case "删除连接器": {
@@ -1411,6 +1453,67 @@ export async function executeMascotToolCall(call: ToolCall, ctx: MascotToolConte
     } catch (err) {
         return { name: call.name, success: false, error: (err as Error).message };
     }
+}
+
+// ── Adventure Handlers ─────────────────────────
+
+async function handleListAdventureWorlds(): Promise<ToolResult> {
+    await hydrateMapStorage();
+    const worlds = loadMapWorlds();
+    if (worlds.length === 0) return { name: "列出冒险世界", success: true, data: "当前没有冒险世界。可以根据用户的世界观描述创建一个。" };
+    return {
+        name: "列出冒险世界",
+        success: true,
+        data: worlds.map(world => {
+            const status = world.status === "generating" ? "生成中" : world.status === "failed" ? `生成失败：${world.statusMessage || "未知错误"}` : "可进入";
+            return `· ${world.skeleton.world.name || "未命名世界"} [id: ${world.id}] — ${status} — 更新于 ${world.updatedAt}`;
+        }).join("\n"),
+    };
+}
+
+async function loadAdventureGeoData(): Promise<import("./map-engine").GeoJSONData> {
+    const response = await fetch("/countries.geo.json");
+    if (!response.ok) throw new Error(`地图底图加载失败（${response.status}）`);
+    return response.json() as Promise<import("./map-engine").GeoJSONData>;
+}
+
+async function handleCreateAdventureWorld(args: Record<string, unknown>): Promise<ToolResult> {
+    const description = typeof args.description === "string" ? args.description.trim() : "";
+    if (!description) return { name: "创建冒险世界", success: false, error: "description 不能为空，请先确认用户想要的世界观和冒险主题。" };
+
+    const apiConfig = resolveAuxiliaryApiConfig("mascotApiConfigId");
+    if (!apiConfig?.apiKey) {
+        return { name: "创建冒险世界", success: false, error: "请先在设置 → 绑定配置 → 辅助 API 中设置小卷助手 API。" };
+    }
+
+    const companionNames = Array.isArray(args.companionNames)
+        ? args.companionNames.filter((name): name is string => typeof name === "string" && name.trim().length > 0).map(name => name.trim())
+        : [];
+    const characters = loadCharacters();
+    const missing = companionNames.filter(name => !characters.some(character => character.name.trim() === name));
+    if (missing.length > 0) {
+        return { name: "创建冒险世界", success: false, error: `找不到同行角色：${missing.join("、")}。请先用「读取角色」确认完整角色名。` };
+    }
+
+    const result = await createAdventureWorld({
+        description,
+        tone: typeof args.tone === "string" ? args.tone : undefined,
+        regionCount: numberOption(args.regionCount, 6),
+        mainQuestType: typeof args.mainQuestType === "string" ? args.mainQuestType : undefined,
+        npcCount: numberOption(args.npcCount, 12),
+        difficulty: typeof args.difficulty === "string" ? args.difficulty : undefined,
+        companionNames,
+        apiConfig,
+        geoData: await loadAdventureGeoData(),
+    });
+    const { mascotNavigate } = await import("./mascot-events");
+    mascotNavigate("mapmode");
+
+    return {
+        name: "创建冒险世界",
+        success: true,
+        data: `已创建冒险世界「${result.world.skeleton.world.name || "未命名世界"}」[worldId: ${result.world.id}]，初始存档 [saveId: ${result.save.id}] 已保存，并已打开冒险大厅。`,
+    };
 }
 
 // ── Image Asset Handlers ───────────────────────
@@ -2870,8 +2973,10 @@ async function handleRemoveDiyWidget(args: Record<string, unknown>): Promise<Too
 // ── Navigation ────────────────────────────────
 
 async function handleNavigate(args: Record<string, unknown>): Promise<ToolResult> {
-    const page = args.page as string;
-    const subpage = args.subpage as string | undefined;
+    const requestedPage = typeof args.page === "string" ? args.page.trim() : "";
+    const page = ["adventure", "map", "冒险"].includes(requestedPage.toLowerCase()) ? "mapmode" : requestedPage;
+    const subpage = typeof args.subpage === "string" ? args.subpage : undefined;
+    if (!page) return { name: "导航", success: false, error: "page 不能为空" };
     const { mascotNavigate } = await import("./mascot-events");
     mascotNavigate(page, subpage);
     return { name: "导航", success: true, data: `已跳转到 ${page}${subpage ? `:${subpage}` : ""}` };

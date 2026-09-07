@@ -459,7 +459,7 @@ function linkifyBareUrls(text: string): string {
 
 // 小红书链接（www.xiaohongshu.com / xhslink.com 短链）：渲染成分享卡片而不是裸链接。
 // 卡片是展示层逻辑，发出方与接收方走同一个 MARKDOWN_COMPONENTS，天然双向生效。
-const XHS_URL_RE = /https?:\/\/(?:[\w-]+\.)*(?:xiaohongshu\.com|xhslink\.com)(?:[/?#]|$)/i;
+const XHS_URL_RE = /https?:\/\/(?:[\w-]+\.)*(?:xiaohongshu\.com|xhslink\.com|xhslink\.cn)(?:[/?#]|$)/i;
 // 元数据（og:title/og:image）由 notes.emberroom.cn/xhs-meta 服务端抓取：
 // 浏览器直连小红书有 CORS 墙，服务器抓不到（风控/需登录）时回退静态卡片。
 const XHS_META_ENDPOINT = "https://notes.emberroom.cn/xhs-meta/fetch";

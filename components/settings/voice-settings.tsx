@@ -907,7 +907,8 @@ export function VoiceSettings() {
                                             <label className="menu-desc ml-1">默认音色 (Default Voice) 或 自定义 Voice ID</label>
                                             <div className="flex flex-col gap-2">
                                                 <div className="flex gap-2">
-                                                    {manualVoiceIds[config.id] ? (
+                                                    {/* Mossland 音色 ID 只能从 Moss 平台复制,默认直接给输入框,其余服务商维持下拉 */}
+                                                    {manualVoiceIds[config.id] ?? config.provider === "Mossland" ? (
                                                         <>
                                                             <Input
                                                                 type="text"
@@ -929,9 +930,13 @@ export function VoiceSettings() {
                                                     ) : (
                                                         (() => {
                                                             const options = voiceOptionsForConfig(config, fetchedVoices);
+                                                            const inList = options.some(v => v.id === config.defaultVoice);
+                                                            // 手输的 ID 不在列表里时,用一个独立的「当前」选项承载它,
+                                                            // 这样「手动输入...」永远是未选中状态、可以随时点选切回输入框
+                                                            const currentValue = inList ? config.defaultVoice : config.defaultVoice ? "__current__" : "__manual__";
                                                             return (
                                                                 <select
-                                                                    value={options.some(v => v.id === config.defaultVoice) ? config.defaultVoice : "__manual__"}
+                                                                    value={currentValue}
                                                                     onChange={(e) => {
                                                                         if (e.target.value === "__manual__") {
                                                                             setManualVoiceIds(prev => ({ ...prev, [config.id]: true }));
@@ -944,6 +949,9 @@ export function VoiceSettings() {
                                                                     {options.map(v => (
                                                                         <option key={v.id} value={v.id}>{v.name}</option>
                                                                     ))}
+                                                                    {!inList && config.defaultVoice && (
+                                                                        <option value="__current__">{config.defaultVoice}（当前）</option>
+                                                                    )}
                                                                     <option value="__manual__">手动输入...</option>
                                                                 </select>
                                                             );

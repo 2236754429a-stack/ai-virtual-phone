@@ -29,7 +29,8 @@ import type { MixMaterial } from "./mixology/types";
 const SOURCE_KEY = "ai_phone_resource_hub_source_v1";
 registerKvMigration(SOURCE_KEY);
 
-const FETCH_TIMEOUT_MS = 15000;
+// 单镜像超时压短一点：镜像列表变长后，15s×6 的最坏等待太折磨，8s 足够一个镜像给出判决
+const FETCH_TIMEOUT_MS = 8000;
 
 // ── 源配置 ──
 
@@ -107,15 +108,30 @@ async function resolveLatestSha(source: ResourceHubSource): Promise<string | nul
     return null;
 }
 
+// 自建中转：服务器在境外、直连 GitHub 稳定，浏览器只走用户自己可达的线路。
+// /gh/cdn/ 反代 jsDelivr（图片与文件的首选），/gh/raw/ 反代 raw.githubusercontent。
+// 大陆直连 jsDelivr/raw 常年被 DNS 污染，自建中转放最前兜住大部分失败。
+const PROXY_CDN_PREFIX = "https://notes.emberroom.cn/gh/cdn";
+const PROXY_RAW_PREFIX = "https://notes.emberroom.cn/gh/raw";
+
 function buildMirrorUrls(source: ResourceHubSource, path: string): string[] {
     const { owner, repo } = source;
     const ref = effectiveRef(source);
     const clean = encodePath(path);
     return [
+        `${PROXY_CDN_PREFIX}/${owner}/${repo}@${ref}/${clean}`,
         `https://cdn.jsdelivr.net/gh/${owner}/${repo}@${ref}/${clean}`,
         `https://fastly.jsdelivr.net/gh/${owner}/${repo}@${ref}/${clean}`,
+        `https://testingcf.jsdelivr.net/gh/${owner}/${repo}@${ref}/${clean}`,
+        `${PROXY_RAW_PREFIX}/${owner}/${repo}/${ref}/${clean}`,
         `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${clean}`,
     ];
+}
+
+/** 图片 <img> 换源回退用：拿到全部镜像候选，加载失败时逐个后移。 */
+export function resourceHubAssetUrlCandidates(source: ResourceHubSource, pathOrUrl: string): string[] {
+    if (/^https?:\/\//i.test(pathOrUrl)) return [pathOrUrl];
+    return buildMirrorUrls(source, pathOrUrl);
 }
 
 async function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {

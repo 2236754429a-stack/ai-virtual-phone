@@ -14,7 +14,7 @@ import type { LlmToolDefinition } from "./llm-provider-adapter";
 import type { ToolCall, ToolResult } from "./tool-executor";
 import type { MascotPageContext } from "./mascot-context";
 import type { Prompt } from "./settings-types";
-import { CHARACTER_CARD_PROMPT, CHARACTER_WORLD_PROMPT, WORLDBOOK_PROMPT, PRESET_PROMPT, GENERAL_PRESET_PROMPT, REGEX_PROMPT, CSS_PROMPT, WIDGET_PROMPT, MIXOLOGY_PROMPT } from "./mascot-prompts";
+import { CHARACTER_CARD_PROMPT, CHARACTER_WORLD_PROMPT, WORLDBOOK_PROMPT, PRESET_PROMPT, GENERAL_PRESET_PROMPT, REGEX_PROMPT, CSS_PROMPT, WIDGET_PROMPT, MIXOLOGY_PROMPT, ADVENTURE_PROMPT } from "./mascot-prompts";
 import {
     buildCssAssetNineSliceCss,
     calibrateCssAssetNineSlice,
@@ -656,7 +656,7 @@ const REMOVE_DIY_WIDGET_SCHEMA = {
 const NAVIGATE_SCHEMA = {
     type: "object",
     properties: {
-        page: { type: "string", enum: ["chat", "characters", "story", "vnmode", "moments", "calendar", "music", "resources", "settings"], description: "页面名" },
+        page: { type: "string", enum: ["chat", "characters", "story", "vnmode", "moments", "calendar", "music", "resources", "settings", "mapmode"], description: "页面名（mapmode 为跑团冒险）" },
         subpage: { type: "string", enum: ["presets", "worldbook", "regex", "api", "voice", "binding", "data", "identity"], description: "子页面（仅 settings 下有效）" },
     },
     required: ["page"],
@@ -913,6 +913,49 @@ const MIX_SAVE_RECIPE_SCHEMA = {
     required: ["name", "slots"],
 };
 
+// ── 跑团冒险工具 ──
+const ADV_LIST_WORLDS_SCHEMA = {
+    type: "object",
+    properties: {},
+    additionalProperties: false,
+};
+
+const ADV_READ_STATUS_SCHEMA = {
+    type: "object",
+    properties: {
+        worldId: { type: "string", description: "冒险世界 id 或名字关键字；不传则读取最近游玩的世界" },
+    },
+    additionalProperties: false,
+};
+
+const ADV_READ_JOURNAL_SCHEMA = {
+    type: "object",
+    properties: {
+        worldId: { type: "string", description: "冒险世界 id 或名字关键字；不传则读取最近游玩的世界" },
+        limit: { type: "number", description: "读取最新日志条数（默认 10，上限 50）" },
+    },
+    additionalProperties: false,
+};
+
+const ADV_READ_NODES_SCHEMA = {
+    type: "object",
+    properties: {
+        worldId: { type: "string", description: "冒险世界 id 或名字关键字；不传则读取最近游玩的世界" },
+        regionName: { type: "string", description: "可选：只查看指定区域名称下的节点" },
+    },
+    additionalProperties: false,
+};
+
+const ADV_ADD_JOURNAL_SCHEMA = {
+    type: "object",
+    properties: {
+        note: { type: "string", description: "要记录的手记或点评文本内容" },
+        worldId: { type: "string", description: "冒险世界 id 或名字关键字；不传则记录到最近游玩的世界" },
+    },
+    required: ["note"],
+    additionalProperties: false,
+};
+
 export const MASCOT_TOOL_PACKAGES: MascotToolPackage[] = [
     {
         id: "css_pack",
@@ -1056,6 +1099,19 @@ export const MASCOT_TOOL_PACKAGES: MascotToolPackage[] = [
         ],
         usageGuide: MIXOLOGY_PROMPT,
     },
+    {
+        id: "adventure_pack",
+        label: "跑团冒险套件",
+        description: "读取与操作「冒险」RPG 系统：查看世界列表、读取当前游玩状态（玩家属性/血量/所在节点/随行伙伴/剧情摘要）、查阅冒险日志流水、查看地图区域与节点详情、添加随行手记点评。",
+        subTools: [
+            { name: "列出冒险世界", description: "列出已创建的冒险世界清单（含世界 id、名称、背景简介、主线任务及游玩状态）。", parameterSchema: ADV_LIST_WORLDS_SCHEMA },
+            { name: "读取冒险状态", description: "读取指定冒险世界或当前最近世界的最新游戏状态（玩家生命与属性、当前坐标、伙伴状态、近期日志、剧情摘要）。", parameterSchema: ADV_READ_STATUS_SCHEMA },
+            { name: "读取冒险日志", description: "查看冒险世界的历史探索日志与大事件记录流水。", parameterSchema: ADV_READ_JOURNAL_SCHEMA },
+            { name: "读取地图节点", description: "查看冒险世界的区域与节点拓扑结构（节点名称、描述、已探索/访问状态）。", parameterSchema: ADV_READ_NODES_SCHEMA },
+            { name: "记录冒险手记", description: "以小卷助手的身份在当前冒险世界的游玩日志中写入一条随笔点评或备忘手记。", parameterSchema: ADV_ADD_JOURNAL_SCHEMA },
+        ],
+        usageGuide: ADVENTURE_PROMPT,
+    },
 ];
 
 // 导航是独立工具（不在套件里），直接暴露
@@ -1079,9 +1135,9 @@ export function buildMascotToolsListPrompt(): string {
     // 导航工具不在套件里，schema 直接在这里展开（只一个工具，省得用 [获取指令] 再加载）
     lines.push("【独立工具】导航 — 跳转到指定页面，可直接调用。");
     lines.push("  参数：");
-    lines.push("    · page (必填) — 页面名。可选值：chat / characters / story / vnmode / moments / calendar / music / resources / settings");
+    lines.push("    · page (必填) — 页面名。可选值：chat / characters / story / vnmode / moments / calendar / music / resources / settings / mapmode");
     lines.push("    · subpage (可选) — 子页面（仅 page=settings 时有效）。可选值：presets / worldbook / regex / api / voice / binding / data / identity");
-    lines.push("  调用：[执行动作:导航({\"page\":\"chat\"})] 或 [执行动作:导航({\"page\":\"settings\",\"subpage\":\"presets\"})]");
+    lines.push("  调用：[执行动作:导航({\"page\":\"chat\"})] 或 [执行动作:导航({\"page\":\"mapmode\"})]");
     lines.push("");
     lines.push("===== 调用规则 =====");
     lines.push("· 展开套件：使用 [获取指令:套件名] 格式，例如 [获取指令:CSS样式套件]");
@@ -1220,6 +1276,11 @@ const MASCOT_NATIVE_TOOL_NAMES: Record<string, string> = {
     "预览DIY组件": "mascot_preview_diy_widget",
     "摆放组件": "mascot_place_widget",
     "移除DIY组件": "mascot_remove_diy_widget",
+    "列出冒险世界": "mascot_adventure_list_worlds",
+    "读取冒险状态": "mascot_adventure_read_status",
+    "读取冒险日志": "mascot_adventure_read_journal",
+    "读取地图节点": "mascot_adventure_read_nodes",
+    "记录冒险手记": "mascot_adventure_add_journal_entry",
 };
 
 const MASCOT_NATIVE_LOADER_NAMES: Record<string, string> = {
@@ -1233,6 +1294,7 @@ const MASCOT_NATIVE_LOADER_NAMES: Record<string, string> = {
     status_bar_pack: "mascot_load_status_bar_pack",
     widget_pack: "mascot_load_widget_pack",
     mixology_pack: "mascot_load_mixology_pack",
+    adventure_pack: "mascot_load_adventure_pack",
 };
 
 export function getMascotNativeToolName(displayName: string): string {
@@ -1399,6 +1461,18 @@ export async function executeMascotToolCall(call: ToolCall, ctx: MascotToolConte
                     case "创建连接器": return mix.mixToolSaveConnector(call.args);
                     case "删除连接器": return mix.mixToolDeleteConnector(call.args);
                     default: return mix.mixToolSaveRecipe(call.args);
+                }
+            }
+
+            // ─── 跑团冒险 ───
+            case "列出冒险世界": case "读取冒险状态": case "读取冒险日志": case "读取地图节点": case "记录冒险手记": {
+                const adv = await import("./adventure/mascot-tools");
+                switch (call.name) {
+                    case "列出冒险世界": return adv.adventureToolListWorlds();
+                    case "读取冒险状态": return adv.adventureToolReadStatus(call.args);
+                    case "读取冒险日志": return adv.adventureToolReadJournal(call.args);
+                    case "读取地图节点": return adv.adventureToolReadNodes(call.args);
+                    default: return adv.adventureToolAddJournalEntry(call.args);
                 }
             }
 

@@ -956,6 +956,47 @@ const ADV_ADD_JOURNAL_SCHEMA = {
     additionalProperties: false,
 };
 
+const ADV_CREATE_WORLD_SCHEMA = {
+    type: "object",
+    properties: {
+        description: { type: "string", description: "世界设计描述：把你设计好的世界观、时代背景、风格基调、区域构成与主线构想完整写在这里（会交给冒险引擎生成完整世界）" },
+        tone: { type: "string", description: "基调风格，如：轻松日常 / 热血冒险 / 克苏鲁恐怖 / 治愈治愈系" },
+        regionCount: { type: "number", description: "区域数量（默认 4）" },
+        npcCount: { type: "number", description: "重要 NPC 数量（默认 4）" },
+        difficulty: { type: "string", description: "难度：轻松 / 适中 / 困难（默认 适中）" },
+        mainQuestType: { type: "string", description: "主线类型偏好，如：寻宝 / 复仇 / 解谜 / 守护" },
+        companionCharacterIds: { type: "array", items: { type: "string" }, description: "开局随行的角色卡 id 或名字列表（可选）" },
+    },
+    required: ["description"],
+    additionalProperties: false,
+};
+
+const ADV_WRITE_SETTINGS_SCHEMA = {
+    type: "object",
+    properties: {
+        worldId: { type: "string", description: "冒险世界 id 或名字关键字；不传则写最近游玩的世界" },
+        worldName: { type: "string", description: "新的世界名称（可选）" },
+        lore: { type: "string", description: "重写世界观背景设定全文（可选）" },
+        mainQuestTitle: { type: "string", description: "新的主线任务标题（可选）" },
+        mainQuestSynopsis: { type: "string", description: "重写主线剧情概要（可选）" },
+        mainQuestStages: { type: "array", items: { type: "object", properties: { locationHint: { type: "string", description: "阶段发生地点（节点名）" }, brief: { type: "string", description: "阶段剧情简述" }, unlockHint: { type: "string", description: "解锁提示（可选）" } }, required: ["brief"] }, description: "重写主线阶段列表（可选，整组替换）" },
+        newSideQuests: { type: "array", items: { type: "object", properties: { title: { type: "string", description: "支线标题" }, synopsis: { type: "string", description: "支线剧情概要" }, triggerRegion: { type: "string", description: "触发区域名" }, stages: { type: "array", items: { type: "object", properties: { locationHint: { type: "string" }, brief: { type: "string" } }, required: ["brief"] }, description: "支线阶段（可选）" } }, required: ["title"] }, description: "要新增的支线任务列表（可选）" },
+        regionLore: { type: "array", items: { type: "object", properties: { regionName: { type: "string", description: "区域名" }, lore: { type: "string", description: "该区域新的背景设定" } }, required: ["regionName", "lore"] }, description: "要更新的区域背景设定列表（可选）" },
+        nodeDescriptions: { type: "array", items: { type: "object", properties: { regionName: { type: "string", description: "区域名（可选，帮助精确定位）" }, nodeName: { type: "string", description: "节点名" }, description: { type: "string", description: "该节点新的描述文本" } }, required: ["nodeName", "description"] }, description: "要更新的节点描述列表（可选，不改节点结构只改文本）" },
+    },
+    additionalProperties: false,
+};
+
+const ADV_DELETE_WORLD_SCHEMA = {
+    type: "object",
+    properties: {
+        worldId: { type: "string", description: "要删除的冒险世界 id 或名字关键字" },
+        confirm: { type: "boolean", description: "必须显式传 true 才会执行删除（删除不可恢复）" },
+    },
+    required: ["worldId", "confirm"],
+    additionalProperties: false,
+};
+
 export const MASCOT_TOOL_PACKAGES: MascotToolPackage[] = [
     {
         id: "css_pack",
@@ -1102,13 +1143,16 @@ export const MASCOT_TOOL_PACKAGES: MascotToolPackage[] = [
     {
         id: "adventure_pack",
         label: "跑团冒险套件",
-        description: "读取与操作「冒险」RPG 系统：查看世界列表、读取当前游玩状态（玩家属性/血量/所在节点/随行伙伴/剧情摘要）、查阅冒险日志流水、查看地图区域与节点详情、添加随行手记点评。",
+        description: "完全管理「冒险」RPG 系统：创建全新世界（小卷设计世界观 → 引擎自动生成完整地图与设定并写入）、写入/修改已有世界的设定（世界名/背景/主线/支线/区域背景/节点描述）、删除世界，以及查看世界列表、读取游玩状态、查阅日志、查看地图节点、添加随行手记。",
         subTools: [
             { name: "列出冒险世界", description: "列出已创建的冒险世界清单（含世界 id、名称、背景简介、主线任务及游玩状态）。", parameterSchema: ADV_LIST_WORLDS_SCHEMA },
             { name: "读取冒险状态", description: "读取指定冒险世界或当前最近世界的最新游戏状态（玩家生命与属性、当前坐标、伙伴状态、近期日志、剧情摘要）。", parameterSchema: ADV_READ_STATUS_SCHEMA },
             { name: "读取冒险日志", description: "查看冒险世界的历史探索日志与大事件记录流水。", parameterSchema: ADV_READ_JOURNAL_SCHEMA },
             { name: "读取地图节点", description: "查看冒险世界的区域与节点拓扑结构（节点名称、描述、已探索/访问状态）。", parameterSchema: ADV_READ_NODES_SCHEMA },
             { name: "记录冒险手记", description: "以小卷助手的身份在当前冒险世界的游玩日志中写入一条随笔点评或备忘手记。", parameterSchema: ADV_ADD_JOURNAL_SCHEMA },
+            { name: "创建冒险世界", description: "替用户从零创建一个全新冒险世界：把你设计的世界观写在 description 里（时代背景/风格/区域构成/主线构想），引擎会按你的设计生成完整世界（地图、区域节点、NPC、主线支线）并自动创建初始存档，用户随即可以进「冒险」App 开玩。生成约需一两分钟。", parameterSchema: ADV_CREATE_WORLD_SCHEMA },
+            { name: "写入世界设定", description: "把设计好的设定写入已有世界：改世界名/世界观背景、重写主线标题概要与阶段、新增支线、更新区域背景与节点描述。只改文本设定，不改区域与节点结构。", parameterSchema: ADV_WRITE_SETTINGS_SCHEMA },
+            { name: "删除冒险世界", description: "删除指定冒险世界及其全部存档（不可恢复，必须 confirm=true）。", parameterSchema: ADV_DELETE_WORLD_SCHEMA },
         ],
         usageGuide: ADVENTURE_PROMPT,
     },
@@ -1264,6 +1308,9 @@ const MASCOT_NATIVE_TOOL_NAMES: Record<string, string> = {
     "添加预设条目": "mascot_add_preset_prompt",
     "更新预设条目": "mascot_update_preset_prompt",
     "更新预设信息": "mascot_update_preset_info",
+    "创建冒险世界": "mascot_adventure_create_world",
+    "写入世界设定": "mascot_adventure_write_settings",
+    "删除冒险世界": "mascot_adventure_delete_world",
     "列出正则组": "mascot_list_regex_groups",
     "读取正则组": "mascot_read_regex_group",
     "创建正则组": "mascot_create_regex_group",
@@ -1465,13 +1512,17 @@ export async function executeMascotToolCall(call: ToolCall, ctx: MascotToolConte
             }
 
             // ─── 跑团冒险 ───
-            case "列出冒险世界": case "读取冒险状态": case "读取冒险日志": case "读取地图节点": case "记录冒险手记": {
+            case "列出冒险世界": case "读取冒险状态": case "读取冒险日志": case "读取地图节点": case "记录冒险手记":
+            case "创建冒险世界": case "写入世界设定": case "删除冒险世界": {
                 const adv = await import("./adventure/mascot-tools");
                 switch (call.name) {
                     case "列出冒险世界": return adv.adventureToolListWorlds();
                     case "读取冒险状态": return adv.adventureToolReadStatus(call.args);
                     case "读取冒险日志": return adv.adventureToolReadJournal(call.args);
                     case "读取地图节点": return adv.adventureToolReadNodes(call.args);
+                    case "创建冒险世界": return adv.adventureToolCreateWorld(call.args);
+                    case "写入世界设定": return adv.adventureToolWriteWorldSettings(call.args);
+                    case "删除冒险世界": return adv.adventureToolDeleteWorld(call.args);
                     default: return adv.adventureToolAddJournalEntry(call.args);
                 }
             }

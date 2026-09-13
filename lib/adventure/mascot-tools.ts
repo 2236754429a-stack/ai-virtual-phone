@@ -32,6 +32,12 @@ function getCharacterNameMap(): Map<string, string> {
     }
 }
 
+// 工具结果统一回字符串：聊天 UI 直接把 data 渲染成文本，返回对象会打挂渲染层
+function asData(value: unknown): string {
+    if (typeof value === "string") return value;
+    try { return JSON.stringify(value, null, 2); } catch { return String(value); }
+}
+
 // ── 工具 1：列出冒险世界 ──
 export async function adventureToolListWorlds(): Promise<ToolResult> {
     try {
@@ -46,22 +52,22 @@ export async function adventureToolListWorlds(): Promise<ToolResult> {
 
         const list = worlds.map(w => {
             const saves = loadSavesForWorld(w.id);
-            return {
-                worldId: w.id,
-                name: w.skeleton?.world?.name || "未命名世界",
-                lore: (w.skeleton?.world?.lore || "").slice(0, 80) + (w.skeleton?.world?.lore?.length > 80 ? "..." : ""),
-                status: w.status || "ready",
-                regionCount: w.skeleton?.richRegions?.length || 0,
-                npcCount: w.skeleton?.npcs?.length || 0,
-                hasSave: saves.length > 0,
-                updatedAt: w.updatedAt,
-            };
+            const lines = [
+                `· ${w.skeleton?.world?.name || "未命名世界"}（worldId: ${w.id}）`,
+                `  背景：${(w.skeleton?.world?.lore || "（无）").slice(0, 80)}${(w.skeleton?.world?.lore || "").length > 80 ? "…" : ""}`,
+                `  状态：${w.status === "generating" ? "生成中" : w.status === "failed" ? `生成失败（${w.statusMessage || ""}）` : "可游玩"} · 区域 ${w.skeleton?.richRegions?.length || 0} 个 · NPC ${w.skeleton?.npcs?.length || 0} 个 · ${saves.length > 0 ? "有存档" : "无存档"}`,
+                `  主线：${w.skeleton?.mainQuest?.title || "未定义"}`,
+                `  更新于：${w.updatedAt}`,
+            ];
+            return lines.join("\n");
         });
 
         return {
             name: "列出冒险世界",
             success: true,
-            data: list,
+            data: worlds.length === 0
+                ? "目前还没有创建任何冒险世界。你可以用「创建冒险世界」帮用户设计并创建一个！"
+                : `共 ${worlds.length} 个冒险世界：\n${list.join("\n")}`,
         };
     } catch (err) {
         return { name: "列出冒险世界", success: false, error: (err as Error).message };
@@ -97,10 +103,10 @@ export async function adventureToolReadStatus(args: Record<string, unknown>): Pr
             return {
                 name: "读取冒险状态",
                 success: true,
-                data: {
+                data: asData({
                     world: worldInfo,
                     saveStatus: "暂无游戏存档或尚未开始游玩",
-                },
+                }),
             };
         }
 
@@ -142,7 +148,7 @@ export async function adventureToolReadStatus(args: Record<string, unknown>): Pr
         return {
             name: "读取冒险状态",
             success: true,
-            data: result,
+            data: asData(result),
         };
     } catch (err) {
         return { name: "读取冒险状态", success: false, error: (err as Error).message };
@@ -173,11 +179,11 @@ export async function adventureToolReadJournal(args: Record<string, unknown>): P
         return {
             name: "读取冒险日志",
             success: true,
-            data: {
+            data: asData({
                 worldName: targetWorld.skeleton?.world?.name,
                 totalEntries: save.journal?.length || 0,
                 entries: recentEntries,
-            },
+            }),
         };
     } catch (err) {
         return { name: "读取冒险日志", success: false, error: (err as Error).message };
@@ -224,10 +230,10 @@ export async function adventureToolReadNodes(args: Record<string, unknown>): Pro
         return {
             name: "读取地图节点",
             success: true,
-            data: {
+            data: asData({
                 worldName: targetWorld.skeleton?.world?.name,
                 regions: regionsData,
-            },
+            }),
         };
     } catch (err) {
         return { name: "读取地图节点", success: false, error: (err as Error).message };
@@ -395,16 +401,14 @@ export async function adventureToolCreateWorld(args: Record<string, unknown>): P
         return {
             name: "创建冒险世界",
             success: true,
-            data: {
-                message: `世界「${skeleton.world.name}」已创建完成，可以直接进入「冒险」应用开始游玩`,
-                worldId: world.id,
-                worldName: skeleton.world.name,
-                lore: skeleton.world.lore,
-                mainQuest: skeleton.mainQuest?.title || "",
-                regionCount: renderedMap.l1Nodes.length,
-                nodeCount: renderedMap.l2Nodes.length + renderedMap.l3Nodes.length,
-                companions: companionNames,
-            },
+            data: [
+                `世界「${skeleton.world.name}」已创建完成，可以直接进入「冒险」应用开始游玩！`,
+                `worldId: ${world.id}`,
+                `世界观：${skeleton.world.lore || "（无）"}`,
+                `主线任务：${skeleton.mainQuest?.title || "未定义"} —— ${skeleton.mainQuest?.synopsis || ""}`,
+                `区域 ${renderedMap.l1Nodes.length} 个，节点共 ${renderedMap.l2Nodes.length + renderedMap.l3Nodes.length} 个`,
+                companionNames.length > 0 ? `开局随行：${companionNames.join("、")}` : "暂无随行角色（用户进世界后可自行添加）",
+            ].join("\n"),
         };
     } catch (err) {
         // 生成失败：像大厅一样把世界标记为 failed，附带原因
@@ -555,11 +559,10 @@ export async function adventureToolWriteWorldSettings(args: Record<string, unkno
         return {
             name: "写入世界设定",
             success: true,
-            data: {
-                message: `已将你设计的设定写入世界「${skeleton.world.name}」`,
-                worldId: updatedWorld.id,
-                changes,
-            },
+            data: [
+                `已将你设计的设定写入世界「${skeleton.world.name}」（worldId: ${updatedWorld.id}）：`,
+                ...changes.map(c => `· ${c}`),
+            ].join("\n"),
         };
     } catch (err) {
         return { name: "写入世界设定", success: false, error: (err as Error).message };

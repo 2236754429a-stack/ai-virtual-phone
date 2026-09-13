@@ -674,9 +674,11 @@ export async function generateMascotReply({
                     // 复用同一上下文，确保多轮工具调用共享角色备份状态。
                     toolCtx.history = workingMessages;
                     const result = await executeMascotToolCall(call, toolCtx);
-                    if (result.success) mascotFillField({ field: call.name, value: result.data || "" });
+                    if (result.success) mascotFillField({ field: call.name, value: typeof result.data === "string" ? result.data : JSON.stringify(result.data ?? "") });
 
-                    const resultText = result.success ? (result.data || "完成") : (result.error || "未知错误");
+                    // 工具结果统一转字符串：data 可能是对象，直接塞进消息会把渲染层打白屏
+                    const rawResultText: unknown = result.success ? (result.data || "完成") : (result.error || "未知错误");
+                    const resultText = typeof rawResultText === "string" ? rawResultText : (() => { try { return JSON.stringify(rawResultText, null, 2); } catch { return String(rawResultText); } })();
                     const updated = [...workingMessages];
                     updated[runningIdx] = {
                         role: "tool",

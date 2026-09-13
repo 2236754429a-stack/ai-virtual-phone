@@ -78,7 +78,10 @@ function isHiddenMascotPlaceholder(msg: MascotMsg): boolean {
 }
 
 function getMascotMessageText(msg: MascotMsg): string {
-    return msg.displayText || msg.text || "";
+    // 历史消息里可能存过对象形式的 displayText/text（旧版工具结果），渲染前统一转字符串防白屏
+    const raw: unknown = msg.displayText || msg.text || "";
+    if (typeof raw === "string") return raw;
+    try { return JSON.stringify(raw, null, 2); } catch { return String(raw); }
 }
 
 function copyTextToClipboard(text: string): void {
@@ -1034,7 +1037,8 @@ export function MascotChatRoom({ onBack, onDeleted }: MascotChatRoomProps) {
                 )}
                 {visibleMessageEntries.map(({ msg, rawIndex }) => {
                     if (msg.role === "tool") {
-                        const label = msg.displayText || msg.text || msg.toolDisplayName || msg.toolName || "工具";
+                        const rawLabel: unknown = msg.displayText || msg.text || msg.toolDisplayName || msg.toolName || "工具";
+                        const label = typeof rawLabel === "string" ? rawLabel : (() => { try { return JSON.stringify(rawLabel); } catch { return String(rawLabel); } })();
                         const shownName = msg.toolDisplayName || msg.toolName || "工具";
                         const running = msg.toolSuccess === undefined;
                         const toolSummary = running

@@ -4,6 +4,7 @@
 
 import type { ApiConfig } from "./settings-types";
 import { pushApiLog } from "./api-log-store";
+import { fetchWithLLMRetry } from "./llm-retry";
 
 const SIMPLE_ANTHROPIC_AUTO_MAX_TOKENS = 8192;
 
@@ -160,7 +161,11 @@ export async function simpleLLMCall(
         const bodyTokenEstimate = Math.ceil(bodySize / 3);
         console.log("[simpleLLMCall] Request:", { url: fetchUrl.slice(0, 80), bodySize, bodyTokenEstimate, model: config.defaultModel });
 
-        const res = await fetch(fetchUrl, { method: "POST", headers, body, signal: options?.signal });
+        // 429（限速）/404/5xx/网络抖动自动重试，详见 llm-retry.ts
+        const res = await fetchWithLLMRetry(
+            () => fetch(fetchUrl, { method: "POST", headers, body, signal: options?.signal }),
+            { signal: options?.signal, label: options?.label || "simpleLLMCall" },
+        );
 
         if (!res.ok) {
             const errText = await res.text().catch(() => "");

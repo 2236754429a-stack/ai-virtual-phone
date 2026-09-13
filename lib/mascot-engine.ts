@@ -24,6 +24,7 @@ import {
     type LlmToolCall,
 } from "./llm-provider-adapter";
 import { sendLLMToolStreamRequest, type LLMToolRequestResult } from "./chat-engine";
+import { fetchWithLLMRetry } from "./llm-retry";
 
 function requireMascotApiConfig() {
     const apiConfig = resolveAuxiliaryApiConfig("mascotApiConfigId");
@@ -418,12 +419,16 @@ async function streamMascotProviderRequest(
     let reasoning = "";
 
     try {
-        const response = await fetch(request.url, {
-            method: "POST",
-            headers: request.headers,
-            body: JSON.stringify(request.body),
-            signal: llmAbort.signal,
-        });
+        // 429（限速）/404/5xx/网络抖动自动重试，详见 llm-retry.ts
+        const response = await fetchWithLLMRetry(
+            () => fetch(request.url, {
+                method: "POST",
+                headers: request.headers,
+                body: JSON.stringify(request.body),
+                signal: llmAbort.signal,
+            }),
+            { signal: llmAbort.signal, label: "小卷流式" },
+        );
         if (!response.ok) throw new Error(`API Stream ${response.status}: ${await response.text()}`);
         if (!response.body) throw new Error("流式响应没有 body。");
 
@@ -565,12 +570,15 @@ async function callMascotText(
         await options?.callbacks?.onStreamFallback?.(formatErrorMessage(streamError));
 
         const request = buildProviderRequest(apiConfig, null, messages);
-        const response = await fetch(request.url, {
-            method: "POST",
-            headers: request.headers,
-            body: JSON.stringify(request.body),
-            signal: options?.signal,
-        });
+        const response = await fetchWithLLMRetry(
+            () => fetch(request.url, {
+                method: "POST",
+                headers: request.headers,
+                body: JSON.stringify(request.body),
+                signal: options?.signal,
+            }),
+            { signal: options?.signal, label: "小卷降级" },
+        );
         if (!response.ok) throw new Error(`API ${response.status}: ${await response.text()}`);
         const data = await response.json();
         const parsed = parseProviderResponse(request.providerKind, data);
@@ -648,12 +656,15 @@ async function callMascotNative(
             await options?.callbacks?.onStreamFallback?.(formatErrorMessage(streamError));
 
             const fallbackRequest = buildProviderRequest(apiConfig, null, messages, { tools });
-            const response = await fetch(fallbackRequest.url, {
-                method: "POST",
-                headers: fallbackRequest.headers,
-                body: JSON.stringify(fallbackRequest.body),
-                signal: options?.signal,
-            });
+            const response = await fetchWithLLMRetry(
+                () => fetch(fallbackRequest.url, {
+                    method: "POST",
+                    headers: fallbackRequest.headers,
+                    body: JSON.stringify(fallbackRequest.body),
+                    signal: options?.signal,
+                }),
+                { signal: options?.signal, label: "小卷工具降级" },
+            );
             if (!response.ok) throw new Error(`API ${response.status}: ${await response.text()}`);
             const data = await response.json();
             const parsed = parseProviderResponse(fallbackRequest.providerKind, data);

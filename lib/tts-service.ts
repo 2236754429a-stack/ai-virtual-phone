@@ -25,6 +25,7 @@ export function resolveVoiceConfig(characterId: string, appId?: ContentAppId): V
  * Supported providers:
  * - Minimax: REST API → hex-encoded mp3
  * - OpenAI: REST API → binary audio blob
+ * - Doubao: 火山引擎语音合成 → base64 audio
  */
 export async function synthesizeSpeech(
     text: string,
@@ -41,6 +42,10 @@ export async function synthesizeSpeech(
 
     if (provider === "OpenAI") {
         return synthesizeOpenAI(text, voiceConfig);
+    }
+
+    if (provider === "Doubao") {
+        return synthesizeDoubao(text, voiceConfig);
     }
 
     return null;
@@ -172,6 +177,51 @@ async function synthesizeOpenAI(text: string, config: VoiceApiConfig): Promise<B
 
     const blob = await response.blob();
     return new Blob([await blob.arrayBuffer()], { type: "audio/mpeg" });
+}
+
+// ── Doubao TTS (火山引擎语音合成) ─────────────────────
+async function synthesizeDoubao(text: string, config: VoiceApiConfig): Promise<Blob | null> {
+    if (!config.apiKey) throw new Error("豆包 API Key 未配置");
+    const speechText = stripDoubaoStageDirections(text);
+    if (!speechText) return null;
+    const apiKey = config.apiKey.trim();
+    const endpoint = (config.baseUrl || "https://openspeech.bytedance.com/api/v3/tts").replace(/\/$/, "");
+    const requestId = crypto.randomUUID();
+    const response = await fetchWithTimeout(endpoint, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-Api-Key": apiKey,
+            "X-Api-Request-Id": requestId,
+        },
+        body: JSON.stringify({
+            speaker_id: config.defaultVoice || "S_D7jejZ8f2",
+            req_params: {
+                text: speechText,
+                audio_params: { format: "mp3", sample_rate: 24000, speech_rate: Math.round(((config.speechSpeed || 1) - 1) * 100) },
+            },
+        }),
+    });
+    const raw = await response.text();
+    let data: any = null;
+    try { data = JSON.parse(raw); } catch { /* 某些 v3 网关直接返回音频 */ }
+    if (!response.ok) throw new Error(data?.message || `豆包 TTS 请求失败 (${response.status})`);
+    if (!data) return new Blob([Uint8Array.from(atob(raw), char => char.charCodeAt(0))], { type: "audio/mpeg" });
+    if (data.code !== undefined && data.code !== 0 && data.code !== 3000) {
+        throw new Error(data.message || `豆包 TTS 请求失败 (${data.code})`);
+    }
+    const audio = data.data || data.audio;
+    if (typeof audio !== "string") throw new Error("豆包未返回音频数据");
+    const binary = atob(audio);
+    const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
+    return new Blob([bytes], { type: "audio/mpeg" });
+}
+
+function stripDoubaoStageDirections(text: string): string {
+    return text
+        .replace(/[（(][^（）()\r\n]{1,40}[）)]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
 }
 
 // ── iOS audio playback that coexists with speech recognition ──────────

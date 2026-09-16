@@ -10,7 +10,7 @@ import { ConfirmDialog } from "@/components/ui/modal";
 import { Toggle, Input } from "@/components/ui/form";
 import { Alert } from "@/components/ui/feedback";
 
-const SUPPORTED_VOICE_PROVIDERS = new Set(["Minimax", "OpenAI"]);
+const SUPPORTED_VOICE_PROVIDERS = new Set(["Minimax", "OpenAI", "Doubao"]);
 const MINIMAX_BASE_URL_OPTIONS = [
     { id: "cn", label: "国内版", baseUrl: "https://api.minimaxi.com/v1" },
     { id: "global", label: "海外版", baseUrl: "https://api.minimax.io/v1" },
@@ -30,6 +30,7 @@ const VOICE_PROVIDER_OPTIONS = [
     { value: "OpenAI", label: "OpenAI TTS" },
     { value: "MinimaxCN", label: "Minimax 语音国内版" },
     { value: "MinimaxGlobal", label: "Minimax 语音海外版" },
+    { value: "Doubao", label: "豆包语音合成" },
 ];
 
 const DEFAULT_VOICE_CONFIGS: VoiceApiConfig[] = [
@@ -182,7 +183,9 @@ function uniqueOptions(options: VoiceOption[]): VoiceOption[] {
 }
 
 function defaultVoiceOptions(provider: string): VoiceOption[] {
-    return provider === "OpenAI" ? DEFAULT_OPENAI_VOICES : DEFAULT_MINIMAX_VOICES;
+    if (provider === "OpenAI") return DEFAULT_OPENAI_VOICES;
+    if (provider === "Doubao") return [{ id: "S_D7jejZ8f2", name: "豆包音色" }];
+    return DEFAULT_MINIMAX_VOICES;
 }
 
 function voiceOptionsForConfig(config: VoiceApiConfig, fetchedVoices: Record<string, VoiceOption[]>): VoiceOption[] {
@@ -221,7 +224,7 @@ function makeCloneVoiceId(config: VoiceApiConfig): string {
 }
 
 function providerSelectValue(config: VoiceApiConfig): string {
-    if (config.provider === "OpenAI") return "OpenAI";
+    if (config.provider === "OpenAI" || config.provider === "Doubao") return config.provider;
     return config.baseUrl === GLOBAL_MINIMAX_BASE_URL ? "MinimaxGlobal" : "MinimaxCN";
 }
 
@@ -310,6 +313,18 @@ export function VoiceSettings() {
                 baseUrl: "https://api.openai.com/v1",
                 model: "tts-1",
                 defaultVoice: "alloy",
+            });
+            setManualModelIds(prev => ({ ...prev, [id]: true }));
+            setManualVoiceIds(prev => ({ ...prev, [id]: false }));
+            return;
+        }
+        if (providerOption === "Doubao") {
+            updateConfig(id, {
+                provider: "Doubao",
+                baseUrl: "https://openspeech.bytedance.com/api/v3/tts",
+                model: current?.model || "seed-tts-1.0",
+                defaultVoice: "S_D7jejZ8f2",
+                region: current?.region || "",
             });
             setManualModelIds(prev => ({ ...prev, [id]: true }));
             setManualVoiceIds(prev => ({ ...prev, [id]: false }));
@@ -677,8 +692,21 @@ export function VoiceSettings() {
                                                 placeholder="输入密钥..."
                                             />
                                         </div>
-                                        {config.provider === "OpenAI" && (
+                                        {(config.provider === "OpenAI" || config.provider === "Doubao") && (
                                             <>
+                                                {config.provider === "Doubao" ? (
+                                                    <>
+                                                        <div className="flex flex-col gap-1">
+                                                            <label className="menu-desc ml-1">豆包接口地址 (v3 Endpoint)</label>
+                                                            <Input type="text" value={config.baseUrl || ""} onChange={(e) => updateConfig(config.id, { baseUrl: e.target.value })} placeholder="https://openspeech.bytedance.com/api/v3/tts" />
+                                                        </div>
+                                                        <div className="flex flex-col gap-1">
+                                                            <label className="menu-desc ml-1">Resource ID（可选）</label>
+                                                            <Input type="text" value={config.model || ""} onChange={(e) => updateConfig(config.id, { model: e.target.value })} placeholder="例如 seed-tts-1.0" />
+                                                        </div>
+                                                        <span className="menu-desc ml-1">API Key 直接填写新版控制台 API Key；已有复刻音色直接使用下方音色 ID。</span>
+                                                    </>
+                                                ) : null}
                                                 <div className="flex flex-col gap-1">
                                                     <label className="menu-desc ml-1">接口地址 (Base URL)</label>
                                                     <Input

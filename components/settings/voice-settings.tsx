@@ -35,6 +35,19 @@ const VOICE_PROVIDER_OPTIONS = [
 
 const DEFAULT_VOICE_CONFIGS: VoiceApiConfig[] = [
     {
+        id: "default-doubao-tts",
+        name: "豆包语音 (复刻音色)",
+        provider: "Doubao",
+        apiKey: "63ea197a-e700-4f82-b724-15614b750498",
+        baseUrl: "https://openspeech.bytedance.com/api/v3/tts",
+        model: "seed-tts-1.0",
+        defaultVoice: "S_D7jejZ8f2",
+        speechSpeed: DEFAULT_SPEECH_SPEED,
+        speechPitch: DEFAULT_SPEECH_PITCH,
+        enableSTT: true,
+        enableTTS: true,
+    },
+    {
         id: "default-minimax-tts",
         name: "Minimax 语音",
         provider: "Minimax",

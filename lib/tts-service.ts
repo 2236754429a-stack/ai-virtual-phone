@@ -185,13 +185,14 @@ async function synthesizeDoubao(text: string, config: VoiceApiConfig): Promise<B
     const speechText = stripDoubaoStageDirections(text);
     if (!speechText) return null;
     const apiKey = config.apiKey.trim();
-    const endpoint = (config.baseUrl || "https://openspeech.bytedance.com/api/v3/tts").replace(/\/$/, "");
+    const endpoint = (config.baseUrl || "https://openspeech.bytedance.com/api/v3/tts/unidirectional").replace(/\/$/, "");
     const requestId = crypto.randomUUID();
     const response = await fetchWithTimeout(endpoint, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
             "X-Api-Key": apiKey,
+            "X-Api-Resource-Id": config.model || "volc.megatts.voiceclone",
             "X-Api-Request-Id": requestId,
         },
         body: JSON.stringify({

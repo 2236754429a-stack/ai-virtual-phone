@@ -39,8 +39,8 @@ const DEFAULT_VOICE_CONFIGS: VoiceApiConfig[] = [
         name: "豆包语音 (复刻音色)",
         provider: "Doubao",
         apiKey: "63ea197a-e700-4f82-b724-15614b750498",
-        baseUrl: "https://openspeech.bytedance.com/api/v3/tts",
-        model: "seed-tts-1.0",
+        baseUrl: "https://openspeech.bytedance.com/api/v3/tts/unidirectional",
+        model: "volc.megatts.voiceclone",
         defaultVoice: "S_D7jejZ8f2",
         speechSpeed: DEFAULT_SPEECH_SPEED,
         speechPitch: DEFAULT_SPEECH_PITCH,
@@ -334,8 +334,8 @@ export function VoiceSettings() {
         if (providerOption === "Doubao") {
             updateConfig(id, {
                 provider: "Doubao",
-                baseUrl: "https://openspeech.bytedance.com/api/v3/tts",
-                model: current?.model || "seed-tts-1.0",
+                baseUrl: "https://openspeech.bytedance.com/api/v3/tts/unidirectional",
+                model: current?.model || "volc.megatts.voiceclone",
                 defaultVoice: "S_D7jejZ8f2",
                 region: current?.region || "",
             });
@@ -711,11 +711,11 @@ export function VoiceSettings() {
                                                     <>
                                                         <div className="flex flex-col gap-1">
                                                             <label className="menu-desc ml-1">豆包接口地址 (v3 Endpoint)</label>
-                                                            <Input type="text" value={config.baseUrl || ""} onChange={(e) => updateConfig(config.id, { baseUrl: e.target.value })} placeholder="https://openspeech.bytedance.com/api/v3/tts" />
+                                                            <Input type="text" value={config.baseUrl || ""} onChange={(e) => updateConfig(config.id, { baseUrl: e.target.value })} placeholder="https://openspeech.bytedance.com/api/v3/tts/unidirectional" />
                                                         </div>
                                                         <div className="flex flex-col gap-1">
                                                             <label className="menu-desc ml-1">Resource ID（可选）</label>
-                                                            <Input type="text" value={config.model || ""} onChange={(e) => updateConfig(config.id, { model: e.target.value })} placeholder="例如 seed-tts-1.0" />
+                                                            <Input type="text" value={config.model || ""} onChange={(e) => updateConfig(config.id, { model: e.target.value })} placeholder="例如 volc.megatts.voiceclone" />
                                                         </div>
                                                         <span className="menu-desc ml-1">API Key 直接填写新版控制台 API Key；已有复刻音色直接使用下方音色 ID。</span>
                                                     </>

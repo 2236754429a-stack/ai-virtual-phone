@@ -266,10 +266,17 @@ export function VoiceSettings() {
     // Load from localStorage on mount
     useEffect(() => {
         const stored = loadVoiceConfigs();
-        const loaded = normalizeVoiceConfigs(stored);
+        let loaded = normalizeVoiceConfigs(stored);
+        // 如果旧缓存里还没有豆包配置，自动追加默认的豆包复刻语音配置
+        if (!loaded.some(c => c.provider === "Doubao")) {
+            const doubaoDefault = DEFAULT_VOICE_CONFIGS.find(c => c.provider === "Doubao");
+            if (doubaoDefault) {
+                loaded = [doubaoDefault, ...loaded];
+            }
+        }
         if (loaded.length > 0) {
             setConfigs(loaded);
-            if (loaded.length !== stored.length) saveVoiceConfigs(loaded);
+            saveVoiceConfigs(loaded);
         } else {
             setConfigs(DEFAULT_VOICE_CONFIGS);
             saveVoiceConfigs(DEFAULT_VOICE_CONFIGS);

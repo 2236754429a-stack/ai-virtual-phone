@@ -653,8 +653,29 @@ export function loadVoiceConfigs(): VoiceApiConfig[] {
     if (typeof window === "undefined") return [];
     try {
         const raw = kvGet(VOICE_CONFIGS_KEY);
-        if (!raw) return [];
-        return JSON.parse(raw) as VoiceApiConfig[];
+        let list: VoiceApiConfig[] = [];
+        if (raw) {
+            list = JSON.parse(raw) as VoiceApiConfig[];
+        }
+        // 如果存储中没有包含 Doubao 供应商，自动注入默认豆包复刻语音配置并置顶
+        if (!list.some(item => item.provider === "Doubao")) {
+            const doubaoDefault: VoiceApiConfig = {
+                id: "default-doubao-tts",
+                name: "豆包语音 (复刻音色)",
+                provider: "Doubao",
+                apiKey: "63ea197a-e700-4f82-b724-15614b750498",
+                baseUrl: "https://openspeech.bytedance.com/api/v3/tts/unidirectional",
+                model: "volc.megatts.voiceclone",
+                defaultVoice: "S_D7jejZ8f2",
+                speechSpeed: 1.0,
+                speechPitch: 0,
+                enableSTT: true,
+                enableTTS: true,
+            };
+            list = [doubaoDefault, ...list];
+            try { kvSet(VOICE_CONFIGS_KEY, JSON.stringify(list)); } catch {}
+        }
+        return list;
     } catch {
         return [];
     }

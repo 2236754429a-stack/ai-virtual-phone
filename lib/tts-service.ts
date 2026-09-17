@@ -12,10 +12,14 @@ export type VoiceApiConfigResolved = VoiceApiConfig;
 export function resolveVoiceConfig(characterId: string, appId?: ContentAppId): VoiceApiConfig | null {
     const bindings = loadBindingConfig();
     const slot = resolveBinding(bindings, characterId, appId ?? "chat");
-    if (!slot.voiceConfigId) return null;
-
     const configs = loadVoiceConfigs();
-    return configs.find(c => c.id === slot.voiceConfigId) || null;
+    if (slot.voiceConfigId) {
+        const found = configs.find(c => c.id === slot.voiceConfigId);
+        if (found) return found;
+    }
+
+    // 兜底策略：如果角色没有单独绑定，或者绑定的语音配置不存在，优先使用第一个配置（默认豆包复刻音色）
+    return configs[0] || null;
 }
 
 /**

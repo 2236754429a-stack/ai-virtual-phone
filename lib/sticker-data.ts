@@ -5,7 +5,7 @@
  * packaged image assets when a pack provides dedicated files.
  */
 
-import { loadCustomStickers } from "./custom-sticker-storage";
+import { loadCustomStickers, findCustomStickerByName, normalizeStickerName } from "./custom-sticker-storage";
 
 export interface StickerItem {
     name: string;
@@ -91,15 +91,61 @@ export const STICKER_PACKS: { name: string; stickers: StickerItem[] }[] = [
     },
 ];
 
+const STICKER_ALIASES: Record<string, string> = {
+    "笑": "微笑",
+    "微笑脸": "微笑",
+    "哭": "大哭",
+    "痛哭": "大哭",
+    "大哭脸": "大哭",
+    "难过脸": "难过",
+    "喜欢": "爱心",
+    "爱": "爱心",
+    "心": "爱心",
+    "点赞": "强",
+    "棒": "强",
+    "强强": "强",
+    "无聊": "发呆",
+    "发呆中": "发呆",
+    "晕倒": "晕",
+    "睡觉觉": "睡觉",
+    "抱": "抱抱",
+    "拥抱": "抱抱",
+    "亲": "亲亲",
+    "偷笑脸": "偷笑",
+    "坏笑脸": "坏笑",
+    "白眼": "翻白眼",
+};
+
 /**
- * Find a sticker by name (for AI [表情:name] matching).
+ * Find a sticker by name (for AI [表情:name] or [表情包:name] matching).
  * Returns the emoji fallback if no real stickerUrl.
  */
 export function findStickerByName(name: string): StickerItem | undefined {
+    const raw = (name || "").trim();
+    if (!raw) return undefined;
+    const clean = normalizeStickerName(raw);
+
+    // 1. 精确匹配
     for (const pack of STICKER_PACKS) {
-        const found = pack.stickers.find(s => s.name === name);
+        const found = pack.stickers.find(s => s.name === raw);
         if (found) return found;
     }
+
+    // 2. 别名匹配
+    const alias = STICKER_ALIASES[clean] || STICKER_ALIASES[raw];
+    if (alias) {
+        for (const pack of STICKER_PACKS) {
+            const found = pack.stickers.find(s => s.name === alias);
+            if (found) return found;
+        }
+    }
+
+    // 3. 规范化匹配（去扩展名/去空白/小写）
+    for (const pack of STICKER_PACKS) {
+        const found = pack.stickers.find(s => normalizeStickerName(s.name) === clean);
+        if (found) return found;
+    }
+
     return undefined;
 }
 
@@ -112,8 +158,7 @@ export function isKnownStickerLabel(label: string, characterIds: (string | undef
     if (!name) return false;
     if (findStickerByName(name)) return true;
     for (const cid of characterIds) {
-        if (!cid) continue;
-        if (loadCustomStickers(cid).some(s => (s.name || "").trim() === name)) return true;
+        if (findCustomStickerByName(cid, name)) return true;
     }
     return false;
 }

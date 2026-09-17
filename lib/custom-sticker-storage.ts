@@ -277,36 +277,115 @@ export function loadStickerPacksForCharacters(characterIds: string[]): StickerPa
 
 // ── Character-facing API (used by engines, renderer, emoji panel) ──
 
-/** Aggregate all stickers from packs assigned to this character. */
-export function loadCustomStickers(characterId: string): StickerItem[] {
-    const packIds = getCharacterPackIds(characterId);
-    if (packIds.length === 0) return [];
+/** 常见经典内置表情包名称，用于在无专属自定义表情包时提供基础可用表情包 */
+export const BUILTIN_CLASSIC_STICKER_NAMES = [
+    "捂脸", "偷笑", "大哭", "害羞", "发呆", "得意", "汗", "亲亲",
+    "爱心", "心碎", "抱抱", "叹气", "委屈", "嘿嘿", "加油", "OK",
+    "比心", "鼓掌", "微笑", "笑哭", "坏笑", "翻白眼", "无语", "生气",
+    "惊讶", "酷", "可怜", "强", "再见"
+];
+
+export function normalizeStickerName(name: string): string {
+    return (name || "")
+        .trim()
+        .toLowerCase()
+        .replace(/^["'“”‘’]+|["'“”‘’]+$/g, "")
+        .replace(/\.(png|jpe?g|gif|webp|bmp|svg)$/i, "")
+        .trim();
+}
+
+/** Aggregate all stickers from packs assigned to this character.
+ *  若该角色没有专属绑定的图集，则自动聚合所有未指定特定角色的通用图集。
+ */
+export function loadCustomStickers(characterId?: string): StickerItem[] {
     const packs = readPacks();
-    const result: StickerItem[] = [];
-    for (const pid of packIds) {
-        const pack = packs.find(p => p.id === pid);
-        if (pack) result.push(...pack.stickers);
+    if (packs.length === 0) return [];
+
+    const assignments = readAssignments();
+    // 1. 如果传了 characterId，先取绑定到该角色的图集
+    if (characterId) {
+        const assignedPackIds = Object.entries(assignments)
+            .filter(([, charIds]) => charIds.includes(characterId))
+            .map(([pid]) => pid);
+
+        if (assignedPackIds.length > 0) {
+            const result: StickerItem[] = [];
+            for (const pid of assignedPackIds) {
+                const pack = packs.find(p => p.id === pid);
+                if (pack) result.push(...pack.stickers);
+            }
+            if (result.length > 0) return result;
+        }
     }
-    return result;
+
+    // 2. 兜底取未分配任何角色的通用图集（用户建了图集但未限制角色）
+    const unassignedPacks = packs.filter(p => !assignments[p.id] || assignments[p.id].length === 0);
+    if (unassignedPacks.length > 0) {
+        return unassignedPacks.flatMap(p => p.stickers);
+    }
+
+    return [];
 }
 
 /** Get sticker names for prompt injection. */
-export function getCustomStickerNames(characterId: string): string {
+export function getCustomStickerNames(characterId?: string): string {
     const stickers = loadCustomStickers(characterId);
-    if (stickers.length === 0) return "无可用表情包，该功能不可用";
-    return stickers.map(s => s.name).join("，");
+    if (stickers.length === 0) {
+        return BUILTIN_CLASSIC_STICKER_NAMES.join("，");
+    }
+    const customNames = stickers.map(s => s.name.trim()).filter(Boolean);
+    const combined = Array.from(new Set([...customNames, "捂脸", "偷笑", "大哭", "害羞", "笑哭"]));
+    return combined.join("，");
 }
 
 /** Get first sticker formatted as [表情包:name], or empty string. */
-export function getCustomStickerExample(characterId: string): string {
+export function getCustomStickerExample(characterId?: string): string {
     const stickers = loadCustomStickers(characterId);
-    if (stickers.length === 0) return "";
-    return `[表情包:${stickers[0].name}]`;
+    if (stickers.length > 0 && stickers[0]?.name) {
+        return `[表情包:${stickers[0].name.trim()}]`;
+    }
+    return "[表情包:捂脸]";
 }
 
-/** Find a custom sticker by name for a given character. */
-export function findCustomStickerByName(characterId: string, name: string): StickerItem | undefined {
-    return loadCustomStickers(characterId).find(s => s.name === name);
+/** Find a custom sticker by name for a given character.
+ *  支持多层级容错匹配：精确匹配 -> 去后缀/大小写容错 -> 通用图集 -> 全局图集。
+ */
+export function findCustomStickerByName(characterId: string | undefined, name: string): StickerItem | undefined {
+    const raw = (name || "").trim();
+    if (!raw) return undefined;
+    const clean = normalizeStickerName(raw);
+
+    const packs = readPacks();
+    if (packs.length === 0) return undefined;
+
+    // 1. 在该角色绑定的图集内查找
+    const assignedStickers = characterId ? loadCustomStickers(characterId) : [];
+    if (assignedStickers.length > 0) {
+        const exact = assignedStickers.find(s => s.name.trim() === raw);
+        if (exact) return exact;
+        const normalized = assignedStickers.find(s => normalizeStickerName(s.name) === clean);
+        if (normalized) return normalized;
+    }
+
+    // 2. 在未分配特定角色的通用图集查找
+    const assignments = readAssignments();
+    const unassignedPacks = packs.filter(p => !assignments[p.id] || assignments[p.id].length === 0);
+    const unassignedStickers = unassignedPacks.flatMap(p => p.stickers);
+    if (unassignedStickers.length > 0) {
+        const exact = unassignedStickers.find(s => s.name.trim() === raw);
+        if (exact) return exact;
+        const normalized = unassignedStickers.find(s => normalizeStickerName(s.name) === clean);
+        if (normalized) return normalized;
+    }
+
+    // 3. 全局所有图集兜底查找（防止用户新建角色忘了勾选已有的表情图集）
+    const allStickers = packs.flatMap(p => p.stickers);
+    const globalExact = allStickers.find(s => s.name.trim() === raw);
+    if (globalExact) return globalExact;
+    const globalNormalized = allStickers.find(s => normalizeStickerName(s.name) === clean);
+    if (globalNormalized) return globalNormalized;
+
+    return undefined;
 }
 
 /** Resolve a single sticker's image URL from IndexedDB. */

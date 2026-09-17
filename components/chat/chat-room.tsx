@@ -87,6 +87,7 @@ import { GROUP_SELF_KEY, canGroupAdminAct, applyGroupAdminAction, buildGroupAdmi
 import { extractTextToolDirectiveText } from "@/lib/text-tool-protocol";
 import { emitChatPluginEvent, getChatPluginHookBus, runChatPluginTransform } from "@/lib/chat-plugin-hooks";
 import { CHAT_PLUGIN_TOAST_EVENT, getChatPluginRuntime } from "@/lib/chat-plugin-runtime";
+import { findCustomStickerByName } from "@/lib/custom-sticker-storage";
 import { ChatPluginSlot } from "@/components/chat/chat-plugin-slot";
 
 // ── Call system message detection ──────────────────────────
@@ -2731,7 +2732,28 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         draft: AssistantMessageDraft,
         guard?: GenerationRunGuard,
     ): AssistantMessageDraft => {
-        if (draft.mediaType === "tool_notice" || part.mediaType !== "image") return draft;
+        if (draft.mediaType === "tool_notice") return draft;
+
+        if (part.mediaType === "sticker") {
+            const label = part.mediaData?.label?.trim();
+            if (label) {
+                const charId = draft.senderCharacterId || session.contactId;
+                const custom = findCustomStickerByName(charId, label);
+                if (custom?.externalUrl) {
+                    return {
+                        ...draft,
+                        mediaData: {
+                            ...draft.mediaData,
+                            label,
+                            stickerUrl: custom.externalUrl,
+                        },
+                    };
+                }
+            }
+            return draft;
+        }
+
+        if (part.mediaType !== "image") return draft;
 
         const description = part.mediaData?.label?.trim();
         if (!description) return draft;

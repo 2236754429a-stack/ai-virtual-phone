@@ -86,7 +86,7 @@ const CHAT_TABS: Array<{ id: ChatTabId; label: string; title: string; descriptio
     icon: UserCircle,
   },
 ];
-const CHECKPHONE_STICKER_RE = /\[表情包[：:]([^\]]+)\]/g;
+const CHECKPHONE_STICKER_RE = /\[(?:表情包|表情|贴纸|sticker)[：:]([^\]]+)\]/gi;
 const checkPhoneStickerUrlCache = new Map<string, string>();
 
 function getInitial(name: string): string {

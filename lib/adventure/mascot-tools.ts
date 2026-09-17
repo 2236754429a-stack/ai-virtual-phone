@@ -111,12 +111,13 @@ export async function adventureToolReadStatus(args: Record<string, unknown>): Pr
         }
 
         // 当前节点与区域
-        const regions = targetWorld.skeleton?.richRegions || [];
+        const regions = (targetWorld.skeleton?.richRegions || []) as any[];
         let currentNodeName = save.currentNodeId;
         for (const reg of regions) {
-            const found = reg.nodes.find(n => n.id === save.currentNodeId);
+            const nodes = (reg.nodes || reg.l2_nodes || reg.l3_nodes || []) as any[];
+            const found = nodes.find((n: any) => n.id === save.currentNodeId);
             if (found) {
-                currentNodeName = `${reg.name} · ${found.name}`;
+                currentNodeName = `${reg.name || reg.l1_name_cn} · ${found.name}`;
                 break;
             }
         }
@@ -205,18 +206,18 @@ export async function adventureToolReadNodes(args: Record<string, unknown>): Pro
             targetWorld = worlds[0];
         }
 
-        const regions = targetWorld.skeleton?.richRegions || [];
+        const regions = (targetWorld.skeleton?.richRegions || []) as any[];
         const save = getLatestSave(targetWorld.id);
         const visitedSet = new Set(save?.visitedNodes || []);
         const discoveredSet = new Set(save?.discoveredNodes || []);
 
         const regionsData = regions
-            .filter(r => !regionNameArg || r.name.includes(regionNameArg))
+            .filter(r => !regionNameArg || (r.name || r.l1_name_cn || "").includes(regionNameArg))
             .map(r => ({
-                regionName: r.name,
-                lore: r.lore,
-                dangerLevel: r.dangerLevel,
-                nodes: r.nodes.map(n => ({
+                regionName: r.name || r.l1_name_cn,
+                lore: r.lore || "",
+                dangerLevel: r.dangerLevel || 0,
+                nodes: ((r.nodes || r.l2_nodes || r.l3_nodes || []) as any[]).map((n: any) => ({
                     id: n.id,
                     name: n.name,
                     description: n.description,

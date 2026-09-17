@@ -204,9 +204,11 @@ const RICH_PATTERNS: {
         }),
     },
     {
-        regex: new RegExp(`\\[表情包${C}([^\\]]+)\\]`),
+        // [表情包:名称] / [表情:名称] / [贴纸:名称] / [sticker:名称]（兼容全角【】）
+        regex: /(?:\[|【)(?:表情包|表情|贴纸|sticker)\s*[：:]\s*([^\]】]+)(?:\]|】)/i,
         build: (m) => {
-            const name = m[1].trim();
+            let name = m[1].trim();
+            name = name.replace(/^["'“”‘’]+|["'“”‘’]+$/g, "").trim();
             return {
                 content: "",
                 mediaType: "sticker" as const,
@@ -641,10 +643,10 @@ export function parseAIResponse(rawText: string, previousState: StateValue[]): P
     // 2.5. Merge [引用:...] with following reply text even if separated by newlines
     const mergedText = postCleaned.replace(/(\[引用[：:][^\]]+\])\s*\n+\s*/g, "$1");
 
-    // 2.6. Collapse blank lines around [表情包:...] so stickers stay in the same segment as adjacent text
+    // 2.6. Collapse blank lines around stickers so stickers stay in the same segment as adjacent text
     const stickerMerged = mergedText
-        .replace(/\n\n+(?=\[表情包[：:][^\]]+\])/g, "\n")
-        .replace(/(\[表情包[：:][^\]]+\])\n\n+/g, "$1\n");
+        .replace(/\n\n+(?=(?:\[|【)(?:表情包|表情|贴纸|sticker)\s*[：:][^\]】]+(?:\]|】))/gi, "\n")
+        .replace(/((?:\[|【)(?:表情包|表情|贴纸|sticker)\s*[：:][^\]】]+(?:\]|】))\n\n+/gi, "$1\n");
 
     // 3. Split by double newlines (placeholders still in place)
     const segments = stickerMerged.split(/\n\n+/).map(s => s.trim()).filter(Boolean);

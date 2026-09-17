@@ -146,6 +146,7 @@ export const MessageBubble = memo(function MessageBubble({ msg, onUpdate, charNa
         if (prev.msg.isTyping !== next.msg.isTyping) return false;
         if (prev.msg.mediaData?.status !== next.msg.mediaData?.status) return false;
         if (prev.msg.mediaData?.label !== next.msg.mediaData?.label) return false;
+        if (prev.msg.mediaData?.stickerUrl !== next.msg.mediaData?.stickerUrl) return false;
         if (prev.msg.mediaData?.claimedBy?.length !== next.msg.mediaData?.claimedBy?.length) return false;
         if (prev.msg.mediaData?.appName !== next.msg.mediaData?.appName) return false;
         if (prev.msg.mediaData?.appCardTitle !== next.msg.mediaData?.appCardTitle) return false;
@@ -1622,7 +1623,7 @@ function StickerBubble({ msg, characterId }: { msg: ChatMessage; characterId?: s
     const [resolvedUrl, setResolvedUrl] = useState<string | null>(cachedUrl || null);
 
     useEffect(() => {
-        if (resolvedUrl || d?.stickerUrl || !label || !characterId) return;
+        if (resolvedUrl || d?.stickerUrl || !label) return;
         const custom = findCustomStickerByName(characterId, label);
         if (!custom) return;
         if (custom.externalUrl) {

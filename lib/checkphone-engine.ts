@@ -935,7 +935,7 @@ function normalizeVisibleChatMessages(messages: ChatMessage[]): ChatMessage[] {
 function getCheckPhoneRealChatText(message: ChatMessage): string {
   if (message.mediaType === "sticker") {
     const labelFromData = typeof message.mediaData?.label === "string" ? message.mediaData.label.trim() : "";
-    const labelFromContent = message.content.match(/\[表情包[：:]([^\]]+)\]/)?.[1]?.trim() ?? "";
+    const labelFromContent = message.content.match(/\[(?:表情包|表情|贴纸|sticker)[：:]([^\]]+)\]/i)?.[1]?.trim() ?? "";
     const label = labelFromData || labelFromContent;
     return label ? `[表情包:${label}]` : "[表情]";
   }

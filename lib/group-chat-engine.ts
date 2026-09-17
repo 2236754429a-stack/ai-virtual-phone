@@ -410,13 +410,10 @@ async function buildGroupChatPromptMessages(
 
     const stickerRows = members.map(m => {
         const names = loadCustomStickers(m.character.id).map(sticker => sticker.name).filter(Boolean);
-        return `${m.character.name}：${names.length > 0 ? names.join("，") : "无"}`;
+        return `${m.character.name}：${names.length > 0 ? names.join("，") : "经典表情（捂脸、偷笑、大哭、害羞、笑哭）"}`;
     });
-    const hasAnySticker = stickerRows.some(row => !row.endsWith("：无"));
-    const allStickerNames = hasAnySticker
-        ? `每个角色只能使用自己名下的表情包：\n${stickerRows.join("\n")}`
-        : "无可用表情包，该功能不可用";
-    const firstExample = members.map(m => getCustomStickerExample(m.character.id)).find(Boolean) || "";
+    const allStickerNames = `每个角色可选用自己名下的表情包，也可选用通用经典表情（捂脸、偷笑、大哭、害羞、笑哭）：\n${stickerRows.join("\n")}`;
+    const firstExample = members.map(m => getCustomStickerExample(m.character.id)).find(Boolean) || "[表情包:捂脸]";
     const [musicLocal, musicCloud] = await Promise.all([buildMusicLocalMacro(), buildMusicCloudMacro()]);
     const activeMemberSchedules = members
         .map(m => ({ name: m.character.name, schedule: m.currentSchedule?.trim() || "" }))

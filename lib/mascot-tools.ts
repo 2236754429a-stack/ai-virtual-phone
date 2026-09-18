@@ -1386,6 +1386,7 @@ const MASCOT_NATIVE_LOADER_NAMES: Record<string, string> = {
     widget_pack: "mascot_load_widget_pack",
     mixology_pack: "mascot_load_mixology_pack",
     adventure_pack: "mascot_load_adventure_pack",
+    story_pack: "mascot_load_story_pack",
 };
 
 export function getMascotNativeToolName(displayName: string): string {

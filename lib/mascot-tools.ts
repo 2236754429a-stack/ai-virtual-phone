@@ -997,6 +997,38 @@ const ADV_DELETE_WORLD_SCHEMA = {
     additionalProperties: false,
 };
 
+// ── 剧情套件 ──────────────────────────────────────────
+
+const LIST_STORY_SESSIONS_SCHEMA = {
+    type: "object",
+    properties: {},
+    required: [],
+};
+
+const WRITE_STORY_BACKGROUND_SCHEMA = {
+    type: "object",
+    properties: {
+        background: { type: "string", description: "完整的剧情背景/开局文本：世界与时代设定、时间地点、用户与角色的关系起点、当前情境与开场钩子。写成可直接作为剧情开场的连贯段落，除标题外不要输出解释性文字。" },
+        sessionTitle: { type: "string", description: "（可选）剧情会话标题。新开剧情线时建议传（如「雨夜重逢线」）；未传且需要新建时自动取名。" },
+        characterName: { type: "string", description: "（可选）角色名。新开剧情线时与 sessionTitle 一起传；写已有会话时可不传。" },
+        characterId: { type: "string", description: "（可选）角色 id，优先于 characterName。" },
+        replace: { type: "boolean", description: "（可选）true=先清空该剧情会话已有内容再写入（重开一条线时用）；默认 false 追加为新的系统消息。" },
+        sessionName: { type: "string", description: "（可选）要写入的已有剧情会话名（标题或角色名）。不传时优先用当前打开的剧情会话；拿不到且未给 sessionTitle 时会返回可选会话列表。" },
+    },
+    required: ["background"],
+};
+
+const STORY_PACK_PROMPT = `===== 剧情背景写作指南 =====
+剧情背景会成为该剧情会话的**系统消息**，每一轮生成都进上下文——它是这条剧情线的"开局设定"，不是正文。写之前：
+1. 先用「读取角色」（必要时加「列出世界书/读取词条」）确认角色人设与既有世界观，背景不得与之冲突；
+2. 背景必备要素：世界与时代设定、时间地点、用户与角色的关系起点、把两人推到一起的当前情境、一个留给用户接话的开场钩子；
+3. 篇幅建议 200~600 字，写成连贯叙事，不要用条目清单堆设定，不要输出标签或宏；
+4. 新开一条剧情线：传 sessionTitle + characterName（不同剧情线用不同标题，方便用户区分）；
+5. 重开某条线：对该会话传 replace=true，会清空旧内容后写入；
+6. 只写已有会话：传 sessionName（标题或角色名），默认追加，不动已有消息；
+7. 写完后回复里**不要复述**背景全文，用一两句话告诉用户已生效、去剧情 App 查看即可。
+
+`;
 export const MASCOT_TOOL_PACKAGES: MascotToolPackage[] = [
     {
         id: "css_pack",
@@ -1156,6 +1188,16 @@ export const MASCOT_TOOL_PACKAGES: MascotToolPackage[] = [
         ],
         usageGuide: ADVENTURE_PROMPT,
     },
+    {
+        id: "story_pack",
+        label: "剧情套件",
+        description: "管理剧情模式（剧情 App）的会话与背景：列出剧情会话、新开剧情线、把剧情背景/开局写入会话。背景会成为该会话的系统消息，随每轮生成进入上下文。剧情页会实时刷新。",
+        subTools: [
+            { name: "列出剧情会话", description: "列出所有剧情会话：角色、标题、最后内容预览、消息数与更新时间。写背景或新开剧情线之前建议先看。", parameterSchema: LIST_STORY_SESSIONS_SCHEMA },
+            { name: "写剧情背景", description: "把一段剧情背景/开局写入剧情会话：传 sessionName 写已有会话（replace=true 则清空重写）；传 sessionTitle + characterName 则新开一条剧情线并写入背景。", parameterSchema: WRITE_STORY_BACKGROUND_SCHEMA },
+        ],
+        usageGuide: STORY_PACK_PROMPT,
+    },
 ];
 
 // 导航是独立工具（不在套件里），直接暴露
@@ -1282,6 +1324,8 @@ const MASCOT_NATIVE_TOOL_NAMES: Record<string, string> = {
     "列出连接器": "mascot_mix_list_connectors",
     "创建连接器": "mascot_mix_save_connector",
     "删除连接器": "mascot_mix_delete_connector",
+    "列出剧情会话": "mascot_list_story_sessions",
+    "写剧情背景": "mascot_write_story_background",
     "生成九宫格CSS": "mascot_build_nine_slice_css",
     "读取角色": "mascot_read_character",
     "创建角色": "mascot_create_character",
@@ -1527,6 +1571,10 @@ export async function executeMascotToolCall(call: ToolCall, ctx: MascotToolConte
                 }
             }
 
+            // ─── 剧情 ───
+            case "列出剧情会话": return await handleListStorySessions();
+            case "写剧情背景": return await handleWriteStoryBackground(call.args, ctx);
+
             // ─── 导航 ───
             case "导航": return await handleNavigate(call.args);
 
@@ -1536,6 +1584,105 @@ export async function executeMascotToolCall(call: ToolCall, ctx: MascotToolConte
     } catch (err) {
         return { name: call.name, success: false, error: (err as Error).message };
     }
+}
+
+// ── Story Handlers（剧情套件）─────────────────────────
+
+async function handleListStorySessions(): Promise<ToolResult> {
+    const [{ loadStorySessions, loadStoryMessages }, { loadCharacters }] = await Promise.all([
+        import("./story-storage"),
+        import("./character-storage"),
+    ]);
+    const sessions = loadStorySessions();
+    if (sessions.length === 0) {
+        return { name: "列出剧情会话", success: true, data: "还没有任何剧情会话。" };
+    }
+    const charNameById = new Map(loadCharacters().map((c) => [c.id, c.name || ""] as const));
+    const lines = sessions.map((session) => {
+        const count = loadStoryMessages(session.id).length;
+        const label = session.title?.trim() || charNameById.get(session.characterId) || session.id;
+        const preview = (session.lastMessagePreview || "").trim();
+        const updated = session.updatedAt ? session.updatedAt.slice(0, 16).replace("T", " ") : "未知";
+        return `· ${label}（角色：${charNameById.get(session.characterId) || "未知"}）— ${count} 条消息${preview ? `，最近：${preview.slice(0, 40)}` : ""}，更新于 ${updated}`;
+    });
+    return { name: "列出剧情会话", success: true, data: [`共 ${sessions.length} 条剧情会话：`, ...lines].join("\n") };
+}
+
+async function handleWriteStoryBackground(args: Record<string, unknown>, ctx: MascotToolContext): Promise<ToolResult> {
+    const background = String(args.background ?? "").trim();
+    if (!background) {
+        return { name: "写剧情背景", success: false, error: "background 不能为空" };
+    }
+    const sessionTitle = String(args.sessionTitle ?? "").trim() || undefined;
+    const characterName = String(args.characterName ?? "").trim() || undefined;
+    const characterIdArg = String(args.characterId ?? "").trim() || undefined;
+    const sessionName = String(args.sessionName ?? "").trim() || undefined;
+    const replace = args.replace === true;
+
+    const storyStorage = await import("./story-storage");
+    const { loadCharacters } = await import("./character-storage");
+
+    // 定位角色（新开剧情线时必须）
+    let character: { id: string; name: string } | undefined;
+    const characters = loadCharacters();
+    if (characterIdArg) {
+        const found = characters.find((c) => c.id === characterIdArg);
+        if (found) character = { id: found.id, name: found.name };
+        else return { name: "写剧情背景", success: false, error: `找不到角色 id：${characterIdArg}` };
+    } else if (characterName) {
+        const lowered = characterName.toLowerCase();
+        const found = characters.find((c) => (c.name || "").toLowerCase().includes(lowered));
+        if (found) character = { id: found.id, name: found.name };
+        else return { name: "写剧情背景", success: false, error: `找不到角色「${characterName}」` };
+    }
+
+    // 定位目标会话：sessionName > 当前页面打开的剧情会话 > sessionTitle 新建
+    let sessionId: string | undefined;
+    let created = false;
+    if (sessionName) {
+        const resolved = await resolveStorySession(sessionName, ctx);
+        if ("error" in resolved) {
+            const choices = resolved.choices ? `可选会话：${resolved.choices.map((c) => `「${c}」`).join("、")}` : "";
+            return { name: "写剧情背景", success: false, error: `${resolved.error}${choices ? `。${choices}` : ""}` };
+        }
+        sessionId = resolved.sessionId;
+    } else {
+        const ctxId = ctx.pageContext.fields.storySessionId || ctx.pageContext.fields.sessionId;
+        if (ctxId) {
+            sessionId = storyStorage.loadStorySessions().find((s) => s.id === ctxId)?.id;
+        }
+    }
+    if (!sessionId && sessionTitle && character) {
+        sessionId = storyStorage.createStorySession(character.id, sessionTitle).id;
+        created = true;
+    }
+    if (!sessionId) {
+        const resolved = await resolveStorySession(undefined, ctx);
+        if ("error" in resolved) {
+            const choices = resolved.choices ? `可传 sessionTitle + characterName 新开一条线，或用 sessionName 从下面选：${resolved.choices.map((c) => `「${c}」`).join("、")}` : "";
+            return { name: "写剧情背景", success: false, error: `没定位到要写入的剧情会话。${choices || resolved.error}` };
+        }
+        sessionId = resolved.sessionId;
+    }
+
+    if (replace) {
+        storyStorage.replaceStoryMessages(sessionId, []);
+    }
+    storyStorage.pushStoryMessage({ sessionId, role: "system", rawContent: background, renderedContent: background });
+    if (sessionTitle) {
+        storyStorage.updateStorySession(sessionId, { title: sessionTitle });
+    }
+    if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("story-external-update", { detail: { sessionId } }));
+    }
+
+    const target = storyStorage.loadStorySessions().find((s) => s.id === sessionId);
+    const label = target?.title?.trim() || target?.lastMessagePreview?.slice(0, 20) || sessionId;
+    return {
+        name: "写剧情背景",
+        success: true,
+        data: `${created ? "已新开剧情线" : replace ? "已重写剧情线" : "已写入剧情会话"}「${label}」${sessionTitle ? `（标题：${sessionTitle}）` : ""}。背景已生效，用户在剧情 App 打开这条线即可继续。`,
+    };
 }
 
 // ── Image Asset Handlers ───────────────────────

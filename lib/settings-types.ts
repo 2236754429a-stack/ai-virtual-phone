@@ -138,6 +138,7 @@ export type RegexRule = {
 
 export type RegexConfig = SettingItemMeta & {
     builtIn?: boolean;
+    builtInVersion?: number;
     rules: RegexRule[];
 };
 

@@ -17,6 +17,7 @@ import type {
 } from "./settings-types";
 import type { UserIdentity } from "@/components/settings/user-identity";
 import { createBuiltinPreset, BUILTIN_PRESET_VERSION } from "./builtin-preset";
+import { BUILTIN_REGEX_VERSION, createBuiltinRegexGroups } from "./builtin-regex";
 import {
     NOVELAI_DEFAULT_MODEL,
     NOVELAI_DEFAULT_NOISE_SCHEDULE,
@@ -519,7 +520,29 @@ function normalizeRegexGroupScopes(group: RegexConfig): RegexConfig {
 export function loadRegexes(): RegexConfig[] {
     if (typeof window === "undefined") return [];
     try {
-        return readRegexesCache().map(normalizeRegexGroupScopes);
+        const regexes = readRegexesCache().map(normalizeRegexGroupScopes);
+
+        // Ensure built-in regex group exists and is up-to-date（与内置预设同模式）
+        const existingBuiltin = regexes.find(g => g.builtIn);
+        if (!existingBuiltin) {
+            const builtin = createBuiltinRegexGroups();
+            regexes.unshift(builtin);
+            writeRegexesCache(regexes);
+            window.dispatchEvent(new CustomEvent("settings-regexes-updated"));
+            return regexes;
+        } else if ((existingBuiltin.builtInVersion ?? 0) < BUILTIN_REGEX_VERSION) {
+            const fresh = createBuiltinRegexGroups();
+            fresh.id = existingBuiltin.id; // 保持组 id 稳定
+            const prevDisabled = new Map(existingBuiltin.rules.map(r => [r.id, r.disabled]));
+            fresh.rules = fresh.rules.map(r => (prevDisabled.has(r.id) ? { ...r, disabled: prevDisabled.get(r.id) ?? false } : r));
+            const idx = regexes.indexOf(existingBuiltin);
+            regexes[idx] = fresh;
+            writeRegexesCache(regexes);
+            window.dispatchEvent(new CustomEvent("settings-regexes-updated"));
+            return regexes;
+        }
+
+        return regexes;
     } catch {
         return [];
     }

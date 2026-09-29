@@ -48,7 +48,8 @@ import {
   rebuildStorySessionRenderCache,
 } from "@/lib/story-engine";
 import {
-  createOrGetStorySession,
+  createStorySession,
+  deleteStorySession,
   hydrateStoryStorage,
   loadStoryMessages,
   loadStorySessions,
@@ -341,28 +342,8 @@ export function StoryApp({ onClose }: StoryAppProps) {
     };
   }, []);
 
-  useEffect(() => {
-    hydrateStoryStorage().then(() => {
-      const initialChar = loadCharacters()[0]?.id || "";
-      if (initialChar) {
-        const session = createOrGetStorySession(initialChar);
-        setActiveCharacterId(initialChar);
-        setActiveSessionId(session.id);
-        activeSessionIdRef.current = session.id; // 同步更新，堵住生成完成回调的守卫空窗
-        setVisibleMessageCount(STORY_INITIAL_LOAD);
-        setMessages(loadStoryMessages(session.id));
-        setCustomCssDraft(session.customCSS || "");
-        setFoldTagsDraft(session.foldTags ?? "think,thinking");
-        setContextExcludedTagsDraft(session.contextExcludedTags ?? "think,thinking");
-        setStorageVersion((value) => value + 1);
-      }
-      setReady(true);
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!activeCharacterId) return;
-    const session = createOrGetStorySession(activeCharacterId);
+  // 剧情多开：进某个角色时，最近更新的剧情线自动续聊；一条都没有才新建
+  function applyActiveSession(session: StorySession) {
     setActiveSessionId(session.id);
     activeSessionIdRef.current = session.id; // 同步更新，堵住生成完成回调的守卫空窗
     setVisibleMessageCount(STORY_INITIAL_LOAD);
@@ -371,6 +352,39 @@ export function StoryApp({ onClose }: StoryAppProps) {
     setFoldTagsDraft(session.foldTags ?? "think,thinking");
     setContextExcludedTagsDraft(session.contextExcludedTags ?? "think,thinking");
     setStorageVersion((value) => value + 1);
+  }
+
+  function switchStorySession(session: StorySession) {
+    applyActiveSession(session);
+    setDrawerOpen(false);
+  }
+
+  useEffect(() => {
+    hydrateStoryStorage().then(() => {
+      const initialChar = loadCharacters()[0]?.id || "";
+      if (initialChar) {
+        setActiveCharacterId(initialChar);
+        const latest = loadStorySessions().find((session) => session.characterId === initialChar); // loadStorySessions 已按 updatedAt 倒序
+        if (latest) {
+          applyActiveSession(latest);
+        } else {
+          applyActiveSession(createStorySession(initialChar));
+        }
+      }
+      setReady(true);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!activeCharacterId) return;
+    const latest = loadStorySessions().find((session) => session.characterId === activeCharacterId);
+    if (latest) {
+      applyActiveSession(latest);
+    } else {
+      applyActiveSession(createStorySession(activeCharacterId));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCharacterId]);
 
   // Listen for live CSS updates from 小卷
@@ -383,6 +397,19 @@ export function StoryApp({ onClose }: StoryAppProps) {
     };
     window.addEventListener("story-session-css-updated", onCSSUpdate);
     return () => window.removeEventListener("story-session-css-updated", onCSSUpdate);
+  }, [activeSessionId]);
+
+  // 剧情多开：外部写入（如小卷「写剧情背景」）后刷新会话列表与当前会话消息
+  useEffect(() => {
+    const onExternalUpdate = (e: Event) => {
+      const detail = (e as CustomEvent).detail || {};
+      setStorageVersion((value) => value + 1);
+      if (detail?.sessionId && detail.sessionId === activeSessionId) {
+        setMessages(loadStoryMessages(detail.sessionId));
+      }
+    };
+    window.addEventListener("story-external-update", onExternalUpdate);
+    return () => window.removeEventListener("story-external-update", onExternalUpdate);
   }, [activeSessionId]);
 
   const autoBottomLockRef = useRef(true);
@@ -943,6 +970,66 @@ export function StoryApp({ onClose }: StoryAppProps) {
               </button>
             ))}
           </div>
+        </div>
+
+        <div className="story-drawer-section">
+          <div className="story-drawer-eyebrow">剧情对话</div>
+          <div className="story-character-list">
+            {sessions
+              .filter((session) => session.characterId === activeCharacterId)
+              .map((session, index, list) => (
+                <button
+                  key={session.id}
+                  className="story-character-chip"
+                  data-active={session.id === activeSessionId ? "true" : undefined}
+                  onClick={() => switchStorySession(session)}
+                >
+                  <span className="story-character-name" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {session.title?.trim() || session.lastMessagePreview?.slice(0, 14) || `${currentCharacter?.name ?? "剧情"} · ${index + 1}`}
+                  </span>
+                  <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                    <span style={{ fontSize: 11, opacity: 0.55 }}>
+                      {session.lastMessagePreview ? "" : "空"}
+                    </span>
+                    {list.length > 1 ? (
+                      <span
+                        role="button"
+                        aria-label="删除这条剧情对话"
+                        style={{ padding: "2px 6px", fontSize: 12, opacity: 0.55 }}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          if (session.id === activeSessionId && isGenerating) return;
+                          if (!window.confirm("删除这条剧情对话？其中的消息不可恢复。")) return;
+                          deleteStorySession(session.id);
+                          if (session.id === activeSessionId) {
+                            const remaining = loadStorySessions().find((item) => item.characterId === activeCharacterId);
+                            if (remaining) {
+                              applyActiveSession(remaining);
+                            } else if (activeCharacterId) {
+                              applyActiveSession(createStorySession(activeCharacterId));
+                            }
+                          }
+                          setStorageVersion((value) => value + 1);
+                        }}
+                      >
+                        ✕
+                      </span>
+                    ) : null}
+                  </span>
+                </button>
+              ))}
+          </div>
+          <button
+            className="story-character-chip"
+            style={{ width: "100%", justifyContent: "center", opacity: 0.85 }}
+            onClick={() => {
+              if (!activeCharacterId) return;
+              applyActiveSession(createStorySession(activeCharacterId));
+              setDrawerOpen(false);
+            }}
+          >
+            <span className="story-character-name">＋ 新开一条剧情</span>
+          </button>
         </div>
 
         <div className="story-drawer-section">
